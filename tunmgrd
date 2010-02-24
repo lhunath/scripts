@@ -397,10 +397,10 @@ while true; do
                 state[t]=error
                 err '%s' "$(<"${err[t]}")"
             }
-        else
+        elif [[ ${state[t]} != n/a ]]; then
 
-            state[t]=n/a
             wrn 'Connection to "%s" is unavailable.' "${name[t]}"
+            state[t]=n/a
         fi
 
     done
