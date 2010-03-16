@@ -128,7 +128,7 @@ rrep() { golp=$rrep golp ERR "$@"; }
 ltfp() { golp=$ltfp golp FTL "$@"; }
 loadConfig() {
     # Load and parse the tunnel configuration file ($1).
-    local t=-1 ti tf= tfi=-1 tfv fieldTypes=( type name host lforwards rforwards rcmd opts )
+    local t=-1 ti tf= tfi=-1 tfv oldpipe=$pipe fieldTypes=( type name host lforwards rforwards rcmd opts )
 
     # Initialize.
     cd
@@ -165,22 +165,48 @@ loadConfig() {
             rforwards)  rforwards[t]=$tfv                               ;;
             rcmd)       rcmd[t]=${tfv:-read}                            ;;
             opts)       optsi=( $(getOptIndexes "$t") )
-                        setOpt "$t" "$((${optsi[@]: -1} + 1))" "$tfv"   ;;
+                        setOpt "$t" "${#optsi[@]}" "$tfv"   ;;
         esac
 
     done
     showConfig
 
-    # Prime the pipe
-    pipe=
-    if [[ $pipe ]]; then
-        rm -f "$pipe"
-        mkfifo "$pipe"
-        > "$pipe" &
-        sleep 1
-        exec 3< "$pipe"
-    else
-        exec 3<&-
+    if [[ $pipe != $oldpipe ]]; then
+        kill "$CLIENT_PID" 2>/dev/null
+
+        if [[ $pipe ]]; then
+
+            # Prime the pipe
+            rm -f "$pipe"
+            mkfifo "$pipe"
+            > "$pipe" &
+
+            # Start the coprocess that will serve the pipe.
+            {
+                # TODO: Update CLIENT's state info when it changes in the main script.
+                coproc CLIENT {
+                    sleep 1
+                    while true; do
+                        while read -r 2>/dev/null && [[ $REPLY ]] 2>/dev/null; do
+                            case $REPLY in
+                                config) showConfig ;;
+                                status) showStatus ;;
+                                *)      err 'No such command: "%s".' "$REPLY" ;;
+                            esac
+                        done < "$pipe"
+                    done
+
+                    # Sleep for a moment before starting the next iteration.
+                    if [[ -t 0 ]]; then
+                        while read -s -n1 -t1; do
+                            showStatus
+                        done
+                    else
+                        sleep 1
+                    fi
+                } <&3 >&4
+            } 3<&0 4>&1
+        fi
     fi
 }
 showConfig() {
@@ -323,31 +349,35 @@ trap showStatus USR1
 trap shutdown EXIT
 while true; do
 
-    # Listen for any commands on the pipe.
-    while read -u3 -r 2>/dev/null && [[ $REPLY ]] 2>/dev/null; do
-        case $REPLY in
-            config) showConfig ;;
-            status) showStatus ;;
-            *)      err 'No such command: "%s".' "$REPLY" ;;
-        esac
-    done
-
     # Manage our tunnels.
     for t in "${!name[@]}"; do
 
         # Check the tunnel state, skip tunnel if alive or ssh hasn't given up yet
         if [[ ${state[t]} = @(|up|lag) ]]; then
 
-            # Can we get a response over the connection?
-            if isAlive "$t"; then
-                state[t]=up
-                continue
-            fi
+            if [[ ${type[t]} = l ]]; then
+                # Local script.
 
-            # Is the process alive?
-            if kill -0 "${pid[t]}" 2>/dev/null; then
-                state[t]=lag
-                continue
+                # Is the process alive?
+                if kill -0 "${pid[t]}" 2>/dev/null; then
+                    state[t]=up
+                    continue
+                fi
+
+            else
+                # Normal connection.
+
+                # Can we get a response over the connection?
+                if isAlive "$t"; then
+                    state[t]=up
+                    continue
+                fi
+
+                # Is the process alive?
+                if kill -0 "${pid[t]}" 2>/dev/null; then
+                    state[t]=lag
+                    continue
+                fi
             fi
 
             # Connection unavailable and no live ssh client for it.
@@ -359,7 +389,39 @@ while true; do
 
 
         # Open the tunnel
-        if isAvailable "${host[t]}"; then
+        if [[ ${type[t]} = l ]]; then
+            # Local script.
+
+            pinf 'Bringing up "%s"' "${name[t]}"
+
+                # Build an array for all the dynamic arguments to add to the process' command line.
+                arguments=()
+                for opti in $(getOptIndexes "$t"); do
+                    arguments+=( "$(getOpt "$t" "$opti")" )
+                done
+
+                # Launch the local command.
+                err[t]=$logDir/tunmgrd.tun$t.log
+                >"${err[t]}" 2>&1           \
+                name=${name[t]}             \
+                host=${host[t]}             \
+                lforwards=${lforwards[t]}   \
+                rforwards=${rforwards[t]}   \
+                bash -c "${rcmd[t]}" "tun$t" "${arguments[@]}" &
+                state[t]=conn pid[t]=$!
+
+                # Give it some time to set up and check whether it died or not.
+                sleep 1
+                kill -0 "${pid[t]}" 2>/dev/null && state[t]=up
+
+            finp "${pid[t]}" || {
+                state[t]=error
+                err '%s' "$(<"${err[t]}")"
+            }
+
+        elif isAvailable "${host[t]}"; then
+            # Available normal connection.
+
             pinf 'Bringing up "%s"' "${name[t]}"
 
                 # Build an array for all the dynamic arguments to add to the ssh(1) command.
@@ -376,6 +438,7 @@ while true; do
                     arguments+=( "$(getOpt "$t" "$opti")" )
                 done
 
+                # Launch the SSH client which sets up the actual connection.
                 err[t]=$logDir/tunmgrd.tun$t.log
                 ssh -ttn >"${err[t]}" 2>&1 \
                     -o "BatchMode yes" \
@@ -386,6 +449,7 @@ while true; do
                     "${arguments[@]}" "${host[t]}" "${rcmd[t]}" &
                 state[t]=conn pid[t]=$!
 
+                # Wait for the connection to become alive.
                 for i in {0..10}; do
                     isAlive "$t" && { state[t]=up; break; }
                     kill -0 "${pid[t]}" 2>/dev/null || break
@@ -397,7 +461,9 @@ while true; do
                 state[t]=error
                 err '%s' "$(<"${err[t]}")"
             }
+
         elif [[ ${state[t]} != n/a ]]; then
+            # Normal connection not yet unavailable.
 
             wrn 'Connection to "%s" is unavailable.' "${name[t]}"
             state[t]=n/a
@@ -406,12 +472,6 @@ while true; do
     done
 
     # Sleep for a moment before starting the next iteration.
-    if [[ -t 0 ]]; then
-        while read -s -n1 -t1; do
-            showStatus
-        done
-    else
-        sleep 1
-    fi
+    sleep 1
 
 done

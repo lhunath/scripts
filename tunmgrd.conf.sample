@@ -81,8 +81,22 @@
 #   Type | Description
 #       ---
 #   .       Ordinary connection.  No special features.
-#   a       Automatically re-establish the connection when it dies.
-#   m       Control Master connection.  This implies the type 'a', but will also configure the connection to act as an ssh(1) Control Master.
+#   m       Control Master connection.  This will configure the connection to act as an ssh(1) Control Master.
+#   l       Local script.  No remote connection will be created.  See the LOCAL SCRIPT section for more details.
+#
+#
+# LOCAL SCRIPT:
+#
+# When the type of a connection is 'l', the connection describes a local script instead of a remote connection.
+#
+# No remote connection will be set up and managed by tunmgrd(1).  This is only useful if you want to manage scripts through tunmgrd(1).
+#
+# The "Remote Command" will be executed locally by a bash shell.  The "Extra Options" will be available as positional parameters
+# in the script.  The "Name", "Host", "Local Forwards" and "Remote Forwards" fields will be available in the script in variables named
+# respectively "name", "host", "lforwards", "rforwards".
+#
+# The connection will appear up for as long as the command process is alive.  When the process goes down, the script will be restarted
+# just like a normal connection would.
 #
 #
 # AUTHOR:
@@ -102,8 +116,12 @@ tunnels=(
 
 #   Keep a few SSH master connection up to for instant ssh'ing to these hosts.
     m "Lyndir"          lhunath@lyndir.com              -                       -                       -                       -
-#   m "Avaria"          lhunath@avaria.lyndir.com       -                       -                       -                       -
-#   m "Satura"          lhunath@satura.lyndir.com       -                       -                       -                       -
+    m "Lyndir (Maven)"  lhunath@maven.lyndir.com        -                       -                       -                       -
+    m "Lyndir (Satura)" lhunath@satura.lyndir.com       -                       -                       -                       -
+    m "Lyndir (Avaria)" lhunath@avaria.lyndir.com       -                       -                       -                       -
+
+#   Manage some local scripts.  This one will connect to my IRC proxy and Growl-notify me of events.
+    l "Lyndir (IRC)"    irc.lyndir.com                  -                       -                       eventwatcher            -
 
 #   At work, I need to ssh into the firewall for it to upon up access to the development network.
     . "Lin.k DePunt"    mbillemo@depunt-fw.lin-k.net    -                       -                       -                       -
