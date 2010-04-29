@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       Mvn-Release -- Perform a version release of a Maven project.          #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+source mvn-tools || exit
+cd "$root"
+
+
+# Options.
+prepare=1; perform=1; branch=1
+while getopts :pbh arg; do
+    case $arg in 
+        p) prepare=0; perform=1; branch=1 ;;
+        b) prepare=0; perform=0; branch=1 ;;
+		h) showHelp \
+			'Mvn-Release' \
+			"Perform a version release of a Maven project." \
+			'lhunath' \
+			\
+            'Options'           '' \
+			'-p'                "Resume from the perform step (skipping prepare)." \
+			'-b'                "Resume from the branch step (skipping prepare and perform)." \
+
+			exit		;;
+    esac
+done
+shift $((OPTIND-1))
+
+# Ask for the to-be-released version number.
+while true; do
+    version=${1:-$(xpathNodes pom.xml '/project/properties/release.version/text()')}
+    version=$(ask "Which version are you releasing? [$version] " || echo "$version")
+    if (( prepare )) && [[ $(git tag -l "$version") ]]; then
+        emit -r "Version '$version' is already tagged."
+    else
+        break
+    fi
+done
+if [[ $(git symbolic-ref -q HEAD) = *-maint || $version = *-p* ]]; then
+    ask -y!N "Create a maintenance branch?" && maintBranch=1
+else
+    ask -Y!n "Create a maintenance branch?" && maintBranch=1
+fi
+
+# Prepare the release by updating versions and tagging in SCM.
+if (( prepare )); then
+    emit "Updating Maven and GIT for the release of $version"
+    if (( releasePom )); then
+        mvn --batch-mode release:clean release:prepare-with-pom -Dtag="$version" -DreleaseVersion="$version" ||:
+        # Workaround for <http://jira.codehaus.org/browse/MRELEASE-539> -- Let normal release:prepare finish it off.
+        git commit -vF <(echo '[maven-release-plugin] [workaround] release cleanup')
+        mvn release:prepare
+    else
+        mvn --batch-mode release:clean release:prepare -Dtag="$version" -DreleaseVersion="$version"
+    fi
+fi
+
+# Perform the release by deploying the changes.
+if (( perform )); then
+    emit "Deploying the code for the release of $version"
+    if (( releasePom )); then
+        # Workaround for <http://jira.codehaus.org/browse/MRELEASE-542> -- Force use of release-pom.xml
+        mvn release:perform -D"arguments=-f release-pom.xml"
+    else
+        mvn release:perform
+    fi
+fi
+
+# Create the release's maintenance branch.
+if (( branch && maintBranch )); then
+    # Remember where we came from so we can come back.
+    emit "Making a maintenance branch for the release of $version"
+    if ! before=$(git symbolic-ref -q HEAD); then
+        before="_before-rel"
+        git tag "$before"
+        trap 'git tag -d "$before"' EXIT
+    fi
+
+    # Create a fake branch because release:branch fails when not on a branch.
+    git checkout -b "_$version-rel" "$version"
+
+    mvn --batch-mode release:branch -DreleaseVersion=SNAPSHOT
+
+    # Go back to where we came from.
+    git checkout "${before##refs/heads/}"
+
+    # Clean up fake branch.
+    git branch -D "_$version-rel"
+fi
+
+emit "All done."

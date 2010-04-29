@@ -1,0 +1,212 @@
+#! /usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       mvn-web -- Extract JBoss web files to allow live editing and later    #
+#                   apply the changes onto the source repository.             #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+echo FIXME
+exit 100
+source mvn-tools
+source mvn-meta
+
+
+distribution=$(cd "$root"; echo "${PWD##*/}")
+shopt -s nullglob
+
+# Parse options.
+for arg in $(getArgs uhdLRavf "$@"); do
+    case $arg in
+		h) showHelp \
+			'Extract Web Files' \
+            "Extract Web Application source files (HTML/CSS/PROPERTIES) for easy runtime editing.
+             Can also apply their changes onto your source repository." \
+			'lhunath' \
+			\
+            '-u' "Update the metadata hashes first.  Use this when new source files were added since the last update." \
+            '-L' "Don't hard-link the JBoss files to the work directory; make copies instead." \
+            '-R' "Reverse operation.  Instead of pulling files out of JBoss, apply the work dir onto the running JBoss deployment." \
+			'-a' "Apply work dir changes onto your source repository." \
+			'-v' "Verbose mode.  Give some more detail about non-trivial operations." \
+            '-d' "Debug mode; explain as much as possible about what's being done." \
+            '-f' "Forceful operation.  Overwrite your repository files with those from the work dir when applying, even when your
+                  files are of a newer version than the original work dir files."
+
+			exit		;;
+        u) update=1     ;;
+        L) nolink=1     ;;
+        R) reverse=1    ;;
+        a) apply=1      ;;
+        v) verbose=1    ;;
+        d) debug=1
+           verbose=1    ;;
+        f) force=1      ;;
+    esac
+done
+(( verbose + debug )) || quiet=1
+
+
+# Parse distribution and base paths.
+base="$scripts/.."
+work="$base/work"
+pwd=$PWD
+
+
+# Figure out which webapps to use.
+[[ -d "$base/jboss/server/default/deploy" ]] \
+    && webapps=( "$base/jboss/server/default/deploy/"{SafeOnline*,Dodentocht*}.ear ) \
+    || webapps=( "$work/"* )
+webapps=( "${webapps[@]%.ear}" )
+webapps=( "${webapps[@]##*/}" )
+
+
+# Make sure distribution is deployed and files are available for extraction.
+(( ! apply )) && {
+    tmp=(  )
+    [[ -d "$base/jboss/server/default/tmp" ]] || {
+        emit -r "Invalid distribution path or distribution not deployed: $distribution at $base"
+        exit 1
+    }
+}
+
+
+# Some debug info.
+(( debug )) && (
+    IFS=,
+    emit "Base    : $(shorten "$base")"
+    emit "Pwd     : $(shorten "$pwd")"
+    emit "webapps : ${webapps[*]}"
+)
+
+
+# Extraction work functions.
+extractStuff() {
+
+    while read file; do
+        mkdir -p "$work/$webapp/${file%/*}"         || return
+        (( reverse )) || {
+            mv "$file" "$work/$webapp/$file" && \
+            cp "$work/$webapp/$file"{,~}            || return
+        }
+
+        [[ -e "$work/$webapp/$file" ]] && {
+            if (( nolink )); then
+                cp -f "$work/$webapp/$file" "$file"
+            else
+                ln -f "$work/$webapp/$file" "$file"
+            fi
+
+            (( ! $? )) || return
+        }
+
+        touch "$file"                               || return
+    done < <(find . -name '*.xhtml' -o -name '*.html' -o -name '*.css' -o -name '*.properties')
+}
+
+
+# Figure out what to do now.
+if (( apply )); then
+    [[ ! -e $work ]] && {
+        emit -R "No work files present at $(shorten "$work").  Cannot apply."
+        exit 1
+    }
+elif (( ! reverse )); then
+    [[ -e $work ]] && {
+        emit -Y "You already have work files at $(shorten "$work").  Perhaps you meant to use -R?"
+        emit -Y "Continuing will delete all these files and replace them by the current server's files."
+        echo; ask -y!N "Continue?" || exit
+
+        emit "Cleaning up $(shorten "$work")" --
+            rm -rf "$work"
+        emit -$?
+    }
+fi
+
+if (( update )); then
+    emit "Updating cache" --
+        updateMeta
+    emit -$?
+fi
+
+if (( reverse )); then
+    emit "Linking web files from $(shorten "$work") to $(shorten "$base")"
+elif (( apply )); then
+    emit "Applying web files from $(shorten "$work") to repository"
+else
+    emit "Linking web files from $(shorten "$base") to $(shorten "$work")"
+fi
+
+notfound=0
+if (( apply )); then
+    for w in "${!webapps[@]}"; do
+        webapp=${webapps[w]}
+        cd "$work/$webapp"
+
+        (( debug )) && \
+            emit -G "Working on $webapp($w) at $PWD"
+
+        find . '(' -name '*.html' -o -name '*.xhtml' -o -name '*.css' -o -name '*.properties' ')' -print0 | while read -d '' file; do
+            [[ -e $file~ ]] || {
+                emit -y "Backup of $(shorten -p "$pwd" "$file") not found."
+                continue
+            }
+
+            fileHash=$(openssl md4 < "$file")
+            backHash=$(openssl md4 < "$file~")
+
+            (( debug )) && \
+                emit " - Hashes of $(shorten "$file"): current: $fileHash <-> backup: $backHash${force:+ (forcing)}"
+
+            if (( force )) || [[ $fileHash != $backHash ]]; then
+                IFS=$'\n' read -r -d '' -a dest < <(:; findWithHash -a "$backHash" "${file##*/}")
+                if [[ ! -e ${dest[0]} ]]; then
+                    if findWithHash -q "$fileHash" "${file##*/}"; then
+                        emit    "   - ${file##*/}: ${bold}${green}up to date${reset}."
+                        continue
+                    else
+                        emit -y "   - ${file##*/}: ${bold}${red}not found${reset}."
+                        continue
+                    fi
+                fi
+
+                (( verbose )) \
+                    && emit "Updating ${file%%*/}:"
+                if [[ $fileHash != $(openssl md4 < "$dest") ]]; then
+                    emit "   - $(shorten -p "$pwd" "$dest")" --
+                        mv "$dest"{,~} && cp "$file" "$dest"
+                    emit -$?
+                else
+                    emit "   - $(shorten -p "$pwd" "$dest"): ${bold}${green}up to date${reset}."
+                fi
+            fi
+        done
+    done
+else
+    for webapp in "${webapps[@]}"; do
+        loc=( "$base"/jboss/server/default/tmp/deploy/*"$webapp.ear-contents"/*/META-INF/../.. )
+        (( ${#loc[@]} )) && cd "$loc" && \
+            extractStuff
+    done
+fi
+
+if (( notfound && ! update )); then
+    emit "Some files weren't found.  This may be resolved by using ${bold}-u${reset} to update the cache first."
+fi
