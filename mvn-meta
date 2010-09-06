@@ -29,6 +29,7 @@ metacache=$(mkdir -p "$root/.meta" && cd "$root/.meta" && echo "$PWD") || exit
 
 # updateHash path
 #   Update the meta hash for the given repository file.
+#   By default, the file is only updated when the meta file is outdated or doesn't exist.  Specify -f to update it regardless.
 updateHash() {
     local arg
     [[ ! $metacache || ! $metabase ]] && {
@@ -50,22 +51,33 @@ updateHash() {
     local mf=$metacache/${f#$metabase/}
 
     mkdir -p "${mf%/*}"
-    if (( forced )) || [[ -f $f && ! -e $mf || $f -nt $mf ]]; then
+    if (( forced )) || [[ -f $f && ! -e $mf || ! $f -ot $mf ]]; then
         openssl md4 < "$f" > "$mf"
     fi
 }
 
 # updateMeta
 #   Update the meta hashes from the repository files.
+#   By default, we only create hashes for missing files.  Specify -r to rebuild all the hashes.
 updateMeta() (
+    local arg
+
+    OPTIND=0
+    while getopts :aq arg; do
+        case $arg in
+            r) rebuild=1    ;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
     cd "$metabase"
     export -f updateHash
-    export metacache metabase
+    export metacache metabase rebuild
     find . \( -type d ! \( -exec bash -c 'test -e "$1/pom.xml"' -- {} \; -o -name src -o -path '*/src/*' \) -prune \) -o \
             ! -type d -path '*/src/main/*' -exec bash -c '
                 shopt -s nullglob
                 for f; do
-                    [[ -f "$f" ]] && updateHash -f "$f"
+                    [[ -f "$f" ]] && updateHash ${rebuild:+-f} "$f"
                 done
                 :' -- {} +
 )
@@ -117,7 +129,7 @@ findWithHash() (
         }
     done < <(find . -type f ${2:+-name "$2"})
 
-    true && (( found ))
+    (( found ))
 )
 
 # When executed, just update the cache.
@@ -129,4 +141,4 @@ findWithHash() (
             updateMeta
         emit -$?
     fi
-}
+} ||:

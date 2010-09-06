@@ -19,58 +19,19 @@
 #                                                                             #
 #                                                                             #
 # Copyright 2010, lhunath                                                     #
-#   * http://lhunath.lyndir.com                                               #
+#   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont.                                                      #
 #                                                                             #
 source mvn-tools || exit
+# TODO: Support for deleted file detection:
+#       When a file is deleted from a source tree, the artifact should be
+#       added to the reactor and first cleaned.
 
 
-# Options.
-while getopts :BaAr:cCnh arg; do
-    case $arg in 
-        B) nobuild=1            ;;
-        a) autoFindArtifacts=1  ;;
-        A) resetArtifacts=1     ;;
-        r) remote=$OPTARG       ;;
-        d) distribution=$OPTARG ;;
-        c) clean=1              ;;
-        C) cleanAll=1           ;;
-        n) nodeploy=1           ;;
-		h) showHelp \
-			'Build and Deploy' \
-			"Builds a set of artifacts and deploys the distribution on a remote host." \
-			'lhunath' \
-			\
-			''                  "Each non-option argument is an additional artifact to include in the build." \
-			''                  "See .mvntools.sample for creating a default configuration." \
-            'Options'           '' \
-			'-B'                "Don't Build.  Just upload and deploy the currently built distribution." \
-            '-a'                "Automatically find outdated artifacts that need building." \
-            '-A'                "Mark all targets under the current directory as up-to-date." \
-			'-r user@host'      "Upload and deploy the distribution to user@host." \
-			'-d distribution'   "The name in the reactor of the distribution artifact. (Default: [top dir name]-distribution)" \
-			'-c'                "Clean the distribution before building it (eg. to rebuild its default/lib)." \
-            '-C'                "Clean each artifact before building it (eg. when files were renamed/removed or to rebuild /lib)." \
-            '-n'                "Do not try to deploy the distribution after building it."
-
-			exit		;;
-    esac
-done
-shift $((OPTIND-1))
-
-# Validate parameters.
-[[ $remote ]] || emit -y "Missing remote"
-distribution=${distribution:-${PWD##*/}-distribution}
-[[ -e $distribution ]] || distribution=
-
-if (( resetArtifacts )); then
-    emit "Resetting all targets under the current directory" --
-        find . -name pom.xml -exec bash -c 'shopt -s nullglob; touch . "${1%/pom.xml}/target/"*.{[jwe]ar,zip}' -- {} \;
-    emit -$?
-    exit
-fi
-
-while (( ! nobuild )); do
+# Functions.
+# loadModules -- invoke whenever the modules array is needed.
+loadModules() {
+    (( ${#modules[@]} )) && return
 
     # Build list of all modules allowed in the maven reactor.
     IFS=$'\n' read -d '' -r -a profiles < <(xpathNodes ~/.m2/settings.xml '/settings/activeProfiles/activeProfile/text()') ||:
@@ -103,9 +64,65 @@ while (( ! nobuild )); do
         }
         addModules ./pom.xml
     emit -$?
+}
 
-    # Automatically find outdated artifacts.
+
+# Options.
+while getopts :aABcCdDfnr:h arg; do
+    case $arg in 
+        a) autoFindArtifacts=1  ;;
+        A) resetArtifacts=1     ;;
+        B) nobuild=1            ;;
+        c) clean=1              ;;
+        C) cleanAll=1           ;;
+        d) distribution=$OPTARG ;;
+        D) nodistribution=1     ;;
+        f) force=1              ;;
+        n) nodeploy=1           ;;
+        r) remote=$OPTARG       ;;
+
+		h) showHelp \
+			'Build and Deploy' \
+			"Builds a set of artifacts and deploys the distribution on a remote host." \
+			'lhunath' \
+			\
+			''                  "Each non-option argument is an additional artifact to include in the build." \
+			''                  "See .mvntools.sample for creating a default configuration." \
+            'Options'           '' \
+            '-a'                "Automatically find outdated artifacts that need building." \
+            '-A'                "Mark all targets under the current directory as up-to-date." \
+			'-B'                "Don't Build.  Just upload and deploy the currently built distribution." \
+			'-c'                "Clean the distribution before building it (eg. to rebuild its default/lib)." \
+            '-C'                "Clean each artifact before building it (eg. when files were renamed/removed or to rebuild /lib)." \
+			'-d distribution'   "The name in the reactor of the distribution artifact. (Default: [top dir name]-distribution)" \
+            '-D'                "Do not try to build and deploy a distribution." \
+            '-n'                "Do not try to deploy the distribution after building it."
+			'-r user@host'      "Upload and deploy the distribution to user@host." \
+
+			exit		;;
+    esac
+done
+shift $((OPTIND-1))
+
+# Validate parameters.
+[[ $remote ]] || emit -y "Missing remote"
+distribution=${distribution:-${PWD##*/}-distribution}
+[[ -e $distribution ]] || distribution=
+(( nodistribution )) && distribution=
+
+if (( resetArtifacts )); then
+    emit "Resetting all targets under the current directory" --
+        find . -name pom.xml -exec bash -c 'shopt -s nullglob; touch . "${1%/pom.xml}/target/"*.{[jwe]ar,zip}' -- {} \;
+    emit -$?
+    exit
+fi
+
+while (( ! nobuild )); do
+
     if (( autoFindArtifacts )); then
+        loadModules
+
+        # Automatically find outdated artifacts.
         emit "Scanning for outdated artifacts"
         while read file; do
             files=("$file")
@@ -160,9 +177,9 @@ while (( ! nobuild )); do
     done
     cd "$root"
 
-    (( ! ${#targets[@]} )) && {
+    (( ! ${#targets[@]} && ! force )) && {
         if ! ask -y!N 'No artifacts selected for build; build anyway?'; then
-            if ! ask -Y!n 'Continue deployment with existing build?'; then
+            if (( nodeploy || nodistribution )) || ! ask -Y!n 'Continue deployment with existing build?'; then
                 exit
             fi
 
@@ -171,32 +188,38 @@ while (( ! nobuild )); do
     }
 
     # Add deploy artifacts.
-    while read pom; do
-        if grep -q finalName "$pom" && grep -q $'<packaging>[ \t]*ear[ \t]*</' "$pom"; then
-            target=${pom%/pom.xml}; target=${target#./}
+    if (( ! nodistribution )); then
+        loadModules
 
-            # Only consider this target if it's in the module list.
-            inArray "$target" "${modules[@]}" || continue
+        while read pom; do
+            if grep -q finalName "$pom" && grep -q $'<packaging>[ \t]*ear[ \t]*</' "$pom"; then
+                target=${pom%/pom.xml}; target=${target#./}
 
-            emit "Adding (FinalName) : $bold$target"
-            targets+=("$target")
-        fi
-    done < <(find . -name 'pom.xml')
+                # Only consider this target if it's in the module list.
+                inArray "$target" "${modules[@]}" || continue
+
+                emit "Adding (FinalName) : $bold$target"
+                targets+=("$target")
+            fi
+        done < <(find . -name 'pom.xml')
+    fi
 
     targets=("${targets[@]#$PWD/}")
 
     # Begin the build.
-    echo
-    emit "Building distribution"
-    mvn -pl "$(printf '%s,' "${targets[@]}")" -npu -amd "${opts[@]}" ${cleanAll:+clean} install & mvnpid=$!
-    (( clean )) && [[ -e $distribution ]] && ( sleep 10; kill -0 $mvnpid 2>/dev/null && rm -rf "$distribution/target/" ) & cleanpid=$!
-    trap "kill $mvnpid $cleanpid 2>/dev/null" EXIT
-    wait $mvnpid
+    if (( ${#targets[@]} )); then
+        echo
+        emit "Building"
+        mvn -pl "$(printf '%s,' "${targets[@]}")" -npu -amd "${opts[@]}" ${cleanAll:+clean} install & mvnpid=$!
+        (( clean && ! nodistribution )) && [[ -e $distribution ]] && ( sleep 10; kill -0 $mvnpid 2>/dev/null && rm -rf "$distribution/target/" ) & cleanpid=$!
+        trap "kill $mvnpid $cleanpid 2>/dev/null" EXIT
+        wait $mvnpid
+    fi
 
     break
 done
 
-if [[ -e $distribution ]] && (( ! nodeploy )); then
+if [[ -e $distribution ]] && (( ! nodeploy && ! nodistribution )); then
 
     # Upload the distribution.
     echo
@@ -205,8 +228,8 @@ if [[ -e $distribution ]] && (( ! nodeploy )); then
 
     emit "Unpacking distribution"
     cd "$distribution/target/"
-    unzip -uo "$distribution"-*.zip
-    src=("$distribution"-*/*/); src=("${src[@]%/}")
+    unzip -uo "${distribution##*/}"-*.zip
+    src=("${distribution##*/}"-*/*/); src=("${src[@]%/}")
 
     emit "Uploading distribution to $remote"
     ssh -qt "$remote" "$(printf 's=%q/scripts/stop; [[ -e $s ]] || exit 0; "$s" -w' "${src%%/*}")"

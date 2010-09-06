@@ -26,8 +26,34 @@ source bashlib
 
 
 # Validate arguments.
+while getopts :fdu:h opt; do
+    case $opt in
+        f) force=1
+            ;;
+        d) deploy=1
+           url=${url:-scpexe://maven.lyndir.com/usr/local/scm/maven2}
+            ;;
+        u) url=$OPTARG
+            ;;
+		h) showHelp \
+			'Install Maven Artifact' \
+            "Installs or deploys files as maven artifacts to a local or remote repository." \
+			'lhunath' \
+			\
+            ''                  "Each non-option argument is a file to install or deploy." \
+            'Options'           '' \
+			'-f'                "Don't ask again for known metadata values." \
+            '-d'                "Deploy remotely instead of installing." \
+            '-u url'            "The location where the files should be installed or deployed to."
+            exit
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+# Defaults.
 url=${url:-file://$HOME/.m2/repository/}
-[[ $1 = -f ]] && { force=1; shift; }
+
 (( ! $# )) && {
     emit -R "Please specify the archives to process as arguments to this script."
     exit 1

@@ -23,31 +23,47 @@
 #   * Maarten Billemont.                                                      #
 #                                                                             #
 set -e
+trap 'echo "$BASH_SOURCE:$BASH_LINENO: ${FUNCNAME:+$FUNCNAME:}$BASH_COMMAND failed with exit code: $?"' ERR
 [[ $0 = */* && -e ${0%/*}/bashlib ]] && source "${0%/*}/bashlib" || source bashlib
 
 # Install all files necessary for mvn-tools.
 installTools() {
     local from=$1 to=$2
 
-    install "$from/"{bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools} "$to"
+    for file in "$from/"{bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
+        cp "$file" "$to/"
+        touch -r "$file" "$to/${file##*/}"
+    done
 }
 # Check for update from repository.
 updateCheck() {
-    local from=$1 outdated=0
+    local from=$1 outdated=
+    [[ -d $from ]] || return 0
 
     for tool in {bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
-        [[ "$(type -P "$tool")" -ot "$from/$tool" ]] && { outdated=1; break; }
+        [[ "$(type -P "$tool")" -ot "$from/$tool" ]] && { outdated=installed; break; }
+        [[ "$(type -P "$tool")" -nt "$from/$tool" ]] && { outdated=source; break; }
     done
 
-    (( ! outdated )) && return
+    case $outdated in
+        installed)
+            if ask -Y!n "An update is available for mvn-tools.  Update now?"; then
+                destination=$(type -P mvn-tools); destination=${destination%/*}
+                installTools "$from" "$destination"
 
-    if ask -Y!n "An update is available for mvn-tools.  Update now?"; then
-        destination=$(type -P mvn-tools); destination=${destination%/*}
-        installTools "$from" "$destination"
+                emit "Successfully updated mvn-tools.  Please rerun your command."
+                exit
+            fi      ;;
+        source)
+            if ask -Y!n "Your installed mvn-tools is more recent than that of the repository.  Update repository?"; then
+                source=$(type -P mvn-tools); source=${source%/*}
+                installTools "$source" "$from"
 
-        emit "Successfully updated mvn-tools.  Please rerun your command."
-        exit
-    fi
+                emit "Successfully updated mvn-tools.  Please rerun your command."
+                exit
+            fi      ;;
+       '') return 0 ;;
+   esac
 }
 
 # When executed instead of sourced; install mvn-tools.
@@ -61,11 +77,24 @@ updateCheck() {
         # Check if we know the source location.
         if [[ $0 = */mvn-tools ]]; then
             if ask -Y!n "mvn-tools is not installed.  Do you want to install it?"; then
-                emit "Your PATH is: $PATH"
+                emit -n "Your PATH is: $PATH"$'\n'
+                IFS=: read -r -a paths <<< "$PATH"
+                anyAccess=0
+                for path in "${paths[@]}"; do
+                    [[ -w $path ]] && { anyAccess=1; break; }
+                done
+                if (( ! anyAccess )); then
+                    emit -y "You don't have write access to any location in PATH."
+                    emit -y "Perhaps you should create a user-specific ~/.bin and add it to PATH?"
+                    exit 1
+                fi
                 while true; do
                     destination=$(ask "Where do you want to install mvn-tools?  Specify a path that is in your PATH:")
-                    [[ -d $destination ]] && break
-                    emit -r "Destination '$destination' does not exist."
+                    [[ ! -d $destination ]] && { emit -r "Destination '$destination' does not exist."; continue; }
+                    [[ ! -w $destination ]] && { emit -r "You don't have write access to '$destination'."; continue; }
+
+                    # All checks passed, destination is valid.
+                    break
                 done
 
                 # Install mvn-tools.

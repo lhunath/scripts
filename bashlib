@@ -51,32 +51,35 @@ runner=(     '> >'           \
              ' >>'           )
 
 # Variables for terminal requests.
-hide=$(      tput vi       2>/dev/null ||: )
-show=$(      tput vs       2>/dev/null ||: )
-save=$(      tput sc       2>/dev/null ||: )
-load=$(      tput rc       2>/dev/null ||: )
-bold=$(      tput bold     2>/dev/null ||: )
-reset=$(     tput sgr0     2>/dev/null ||: )
-#blink=$(    tput blink    2>/dev/null ||: )
-italic=$(    tput sitm     2>/dev/null ||: )
-red=$(       tput setaf 1  2>/dev/null ||: )
-green=$(     tput setaf 2  2>/dev/null ||: )
-yellow=$(    tput setaf 3  2>/dev/null ||: )
-blue=$(      tput setaf 4  2>/dev/null ||: )
-magenta=$(   tput setaf 5  2>/dev/null ||: )
-cyan=$(      tput setaf 6  2>/dev/null ||: )
-white=$(     tput setaf 7  2>/dev/null ||: )
-default=$(   tput op       2>/dev/null ||: )
-eed=$(       tput ed       2>/dev/null ||: )
-eel=$(       tput el       2>/dev/null ||: )
-ebl=$(       tput el1      2>/dev/null ||: )
-ewl=$(       tput el       2>/dev/null ||: ;
-             tput el1      2>/dev/null ||: )
-draw=$(      tput enacs    2>/dev/null ||: ;
-             tput smacs    2>/dev/null ||: ;
-             tput acsc     2>/dev/null ||: ;
-             tput rmacs    2>/dev/null ||: )
+{
+hide=$(     tput civis  || tput vi      )
+show=$(     tput cvvis  || tput vs      )
+save=$(     tput sc                     )
+load=$(     tput rc                     )
+bold=$(     tput bold   || tput md      )
+reset=$(    tput sgr0   || tput me      )
+#blink=$(   tput blink  || tput mb      )
+italic=$(   tput sitm   || tput ZH      )
+red=$(      tput setaf 1|| tput AF 1    )
+green=$(    tput setaf 2|| tput AF 2    )
+yellow=$(   tput setaf 3|| tput AF 3    )
+blue=$(     tput setaf 4|| tput AF 4    )
+magenta=$(  tput setaf 5|| tput AF 5    )
+cyan=$(     tput setaf 6|| tput AF 6    )
+white=$(    tput setaf 7|| tput AF 7    )
+default=$(  tput op                     )
+eed=$(      tput ed     || tput cd      )   # Erase to end of display
+eel=$(      tput el     || tput ce      )   # Erase to end of line
+ebl=$(      tput el1    || tput cb      )   # Erase to beginning of line
+ewl=$eel$ebl                                # Erase whole line
+draw=$(     tput -S <<< '   enacs
+                            smacs
+                            acsc
+                            rmacs' || { \
+            tput eA; tput as;
+            tput ac; tput ae;         } )   # Drawing characters
 back=$'\b'
+} 2>/dev/null ||:
 
 # Monochrome terminals don't need these.
 [[ $TERM = *-m ]] && \
@@ -277,7 +280,7 @@ emit() {
         spinPid=$!
 
         # Execute the command for the spinner if one is given.
-        #sleep .01 # Let the spinner initialize itself properly first. # Can probably remove this now that we echo > spinPipe?
+        #sleep 1 # Let the spinner initialize itself properly first. # Can probably remove this now that we echo > spinPipe?
         if   (( $# == 1 )); then command=$1
         elif (( $# >  1 )); then command=$(printf '%q ' "$@")
         else return 0; fi
@@ -328,6 +331,15 @@ spinner() {
         emit -y 'Please specify a message as argument or a status option.'
         return 1
     }
+
+    # Initialize spinner vars.
+    # Make sure monitor mode is off or we won't be able to trap INT properly.
+    local monitor=0; [[ $- = *m* ]] && monitor=1
+    local done=
+
+    # Place the trap for interrupt signals.
+    trap 'done="${red}failed"' USR2
+    trap 'done="${green}done"' USR1
 
     # Initialize the vars.
     local pid=${spinPid:-$!}
@@ -381,15 +393,6 @@ spinner() {
     [[ ${styles[2]} ]] && textstyle=${styles[2]}
     [[ ${styles[3]} ]] && textcolor=${styles[3]}
 
-    # Initialize spinner vars.
-    # Make sure monitor mode is off or we won't be able to trap INT properly.
-    local monitor=0; [[ $- = *m* ]] && monitor=1
-    local done="${green}done"
-
-    # Place the trap for interrupt signals.
-    trap 'done="${red}failed"; break' USR2
-    trap 'break' USR1
-
     # Figure out what FD to use for our messages.
     [[ -t 1 ]]; local fd=$(( $? + 1 ))
 
@@ -405,7 +408,7 @@ spinner() {
     # Render the spinner.
     set +m
     local i=0
-    while true; do
+    while [[ ! $done ]]; do
         IFS= read -r -d '' newtext || true
         newtext=${newtext%%$'\n'}; newtext=${newtext##*$'\n'}
         if [[ $newtext = +* ]]; then
@@ -431,7 +434,7 @@ spinner() {
         sleep .25 # Four iterations make one second.
 
         # Cancel when calling script disappears.
-        kill -0 $$ >/dev/null || { done="${red}aborted"; break; }
+        kill -0 $$ >/dev/null || done="${red}aborted"
     done
 
     # Get rid of the spinner traps.
