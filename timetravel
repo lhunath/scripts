@@ -22,8 +22,7 @@
 #   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont                                                       #
 #                                                                             #
-
-source bashlib
+source "${BASH_SOURCE%/*}/bashlib"
 _logInfColor=$green 
 
 TIMEMACHINE=${TIMEMACHINE:-/Volumes/MobileBackups/Backups.backupdb}

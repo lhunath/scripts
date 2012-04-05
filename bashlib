@@ -58,7 +58,7 @@ runner=(     '> >'           \
              ' >>'           )
 
 # Variables for terminal requests.
-[[ -t 1 ]] && {
+[[ -t 2 ]] && {
     salt=$(     tput smcup  || tput ti      )
     ealt=$(     tput rmcup  || tput te      )
     hide=$(     tput civis  || tput vi      )
@@ -367,7 +367,7 @@ log() {
     esac
 
     # Output the log message.
-    printf '%s' "$conMsg"
+    printf >&2 '%s' "$conMsg"
     [[ $_logFile && ! -e $_logFile ]] && touch "$_logFile"
     [[ -w $_logFile ]] \
         && printf '%s' "$logMsg" >> "$_logFile"
