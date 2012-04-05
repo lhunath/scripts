@@ -39,52 +39,60 @@ while getopts :H:T:D:lrdf opt; do
     esac
 done
 shift $((OPTIND-1))
-host=${host:-$(scutil --get ComputerName | sed 's,Computer Name: ,,')}
-time=${time:-Latest}
-disk=${disk:-Macintosh HD}
 mode=${mode:-show}
 
-pinf "Accessing backups of %s, disk %s, at %s." "$host" "$disk" "$time"
-    timePath=$TIMEMACHINE/$host/$time/$disk
-    [[ -e $timePath ]]
-fnip || ftl "Backups not found." || exit
+file=${1:-.}
+[[ $file = /* ]] || file=$PWD/$file
 
 case $mode in
     list)
-        printf '%s\n' "$timePath"/*
+        inf 'Searching for file: %s' "$file"
+        timeFiles=("$TIMEMACHINE/$host"*/"$time"*/"$disk"*"$file")
+        if [[ -e $timeFiles ]]; then
+            for timeFileInfo in "${timeFiles[@]/#"$TIMEMACHINE/"}"; do
+                IFS=/ read -r timeFileHost timeFileTime timeFileDisk _ <<< "$timeFileInfo"
+                inf 'Found backup of %s, disk %s, at %s: %s' "$timeFileHost" "$timeFileDisk" "$timeFileTime" "$timeFileInfo"
+            done
+        else
+            wrn 'No backups found.'
+        fi
         ;;
     show|diff|restore)
-        file=${1:-.}
-        [[ $file = /* ]] || file=$PWD/$file
-        timeFile=$timePath/$file
+        host=${host:-$(scutil --get ComputerName | sed 's,Computer Name: ,,')}
+        time=${time:-Latest}
+        disk=${disk:-Macintosh HD}
 
-        if [[ ! -e $timeFile ]]; then
-            err "Restore failed, backup file does not exist for: %s" "$file"
-            exit 1
-        fi
+        pinf 'Accessing backups of %s, disk %s, at %s.' "$host" "$disk" "$time"
+            timePath=$TIMEMACHINE/$host/$time/$disk
+            [[ -e $timePath ]]
+        fnip || ftl 'Backups not found.' || exit
+
+        timeFile=$timePath/$file
+        [[ -e $timeFile ]] || ftl 'Restore failed, no backup found for: %s' "$file" || exit
 
         case $mode in
             show)
-                inf "Showing file: %s" "$file"
+                inf 'Showing file: %s' "$file"
                 if [[ -d $timeFile ]]; then
                     ls -al "$timeFile"
                 else
-                    less "$timeFile"
+                    if [[ -t 1 ]]; then
+                        less "$timeFile"
+                    else
+                        cat "$timeFile"
+                    fi
                 fi
                 ;;
             diff)
-                inf "Showing changes to file: %s" "$file"
+                inf 'Showing changes to file: %s' "$file"
                 colordiff -urN "$timeFile" "$file" | less -R
                 ;;
             restore)
-                if [[ -e $file ]] && (( ! force )); then
-                    err "Restore failed, file already exists: %s" "$file"
-                    exit 1
-                fi
+                [[ ! -e $file ]] || (( force )) || ftl 'Restore failed, refusing to overwrite existing file (force with %s): %s' -f "$file" || exit
 
-                inf "Recovering file: %s" "$file"
+                inf 'Recovering file: %s' "$file"
                 [[ -d $timeFile && $timeFile != */ ]] && timeFile+=/
-                rsync -av "$timeFile" "$file" && inf "Successfully recovered" || err "Recovery failed, file could not be copied: rsync exit code %d" "$?"
+                rsync -av "$timeFile" "$file" && inf 'Successfully recovered.' || err 'Recovery failed, file could not be copied: rsync exit code %d' "$?"
                 ;;
         esac
         ;;
