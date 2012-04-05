@@ -3,7 +3,7 @@
 
 Time Machine is an OS X technology for performing continuous backups of your files to local or remote disks.  Since OS X 10.7 (Lion), Time Machine makes local backups of all your files.  This means you have snapshot versions of all your files at different times in the past.  If you are running Lion right now, you already have these snapshots.
 
-To access all this backup data, OS X comes with a program named Time Machine, which opens a GUI front-end which lets you use Finder to browse your backups.  This interface is really slow and tedious for anyone used to navigating their system on the command-line.  To solve this problem, `timetravel` was written.
+To access all this backup data, OS X comes with a program named Time Machine, which opens a GUI front-end that lets you use Finder for browsing your backups.  This is really slow and tedious for anyone used to navigating their system on the command-line.  To solve this problem, `timetravel` was written.
 
 ![Demo](http://stuff.lhunath.com/shots/shot.1333636642.png )
 
