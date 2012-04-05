@@ -25,6 +25,21 @@
 source "${BASH_SOURCE%/*}/bashlib"
 _logInfColor=$green 
 
+fancydiff() {
+    if hash colordiff >/dev/null; then
+        colordiff -urN "$@"
+    else
+        diff -urN "$@"
+    fi | fancypager
+}
+fancypager() {
+    if [[ $PAGER ]]; then
+        "$PAGER"
+    else
+        less -R
+    fi
+}
+
 TIMEMACHINE=${TIMEMACHINE:-/Volumes/MobileBackups/Backups.backupdb}
 while getopts :H:T:D:lrdf opt; do
     case $opt in
@@ -76,7 +91,7 @@ case $mode in
                     ls -al "$timeFile"
                 else
                     if [[ -t 1 ]]; then
-                        less "$timeFile"
+                        "${PAGER:-less}" "$timeFile"
                     else
                         cat "$timeFile"
                     fi
@@ -84,7 +99,11 @@ case $mode in
                 ;;
             diff)
                 inf 'Showing changes to file: %s' "$file"
-                colordiff -urN "$timeFile" "$file" | less -R
+                if [[ -t 1 ]]; then
+                    fancydiff "$timeFile" "$file"
+                else
+                    diff -urN "$timeFile" "$file"
+                fi
                 ;;
             restore)
                 [[ ! -e $file ]] || (( force )) || ftl 'Restore failed, refusing to overwrite existing file (force with %s): %s' -f "$file" || exit
