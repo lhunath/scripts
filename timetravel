@@ -1,0 +1,92 @@
+#! /usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       TimeTravel -- A CLI tool for accessing time machine backups.          #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2012, lhunath                                                     #
+#   * http://www.lhunath.com                                                  #
+#   * Maarten Billemont                                                       #
+#                                                                             #
+
+source bashlib
+_logInfColor=$green 
+
+TIMEMACHINE=${TIMEMACHINE:-/Volumes/MobileBackups/Backups.backupdb}
+while getopts :H:T:D:lrdf opt; do
+    case $opt in
+        H) host=$OPTARG;;
+        T) time=$OPTARG;;
+        D) disk=$OPTARG;;
+        l) mode=list;;
+        r) mode=restore;;
+        d) mode=diff;;
+        f) force=1;;
+    esac
+done
+shift $((OPTIND-1))
+host=${host:-$(scutil --get ComputerName | sed 's,Computer Name: ,,')}
+time=${time:-Latest}
+disk=${disk:-Macintosh HD}
+mode=${mode:-show}
+
+pinf "Accessing backups of %s, disk %s, at %s." "$host" "$disk" "$time"
+    timePath=$TIMEMACHINE/$host/$time/$disk
+    [[ -e $timePath ]]
+fnip || ftl "Backups not found." || exit
+
+case $mode in
+    list)
+        printf '%s\n' "$timePath"/*
+        ;;
+    show|diff|restore)
+        file=${1:-.}
+        [[ $file = /* ]] || file=$PWD/$file
+        timeFile=$timePath/$file
+
+        if [[ ! -e $timeFile ]]; then
+            err "Restore failed, backup file does not exist for: %s" "$file"
+            exit 1
+        fi
+
+        case $mode in
+            show)
+                inf "Showing file: %s" "$file"
+                if [[ -d $timeFile ]]; then
+                    ls -al "$timeFile"
+                else
+                    less "$timeFile"
+                fi
+                ;;
+            diff)
+                inf "Showing changes to file: %s" "$file"
+                colordiff -urN "$timeFile" "$file" | less -R
+                ;;
+            restore)
+                if [[ -e $file ]] && (( ! force )); then
+                    err "Restore failed, file already exists: %s" "$file"
+                    exit 1
+                fi
+
+                inf "Recovering file: %s" "$file"
+                [[ -d $timeFile && $timeFile != */ ]] && timeFile+=/
+                rsync -av "$timeFile" "$file" && inf "Successfully recovered" || err "Recovery failed, file could not be copied: rsync exit code %d" "$?"
+                ;;
+        esac
+        ;;
+esac
+
