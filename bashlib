@@ -59,16 +59,21 @@ runner=(     '> >'           \
 
 # Variables for terminal requests.
 [[ -t 2 ]] && {
-    salt=$(     tput smcup  || tput ti      )
-    ealt=$(     tput rmcup  || tput te      )
-    hide=$(     tput civis  || tput vi      )
-    show=$(     tput cvvis  || tput vs      )
-    save=$(     tput sc                     )
-    load=$(     tput rc                     )
-    bold=$(     tput bold   || tput md      )
-    reset=$(    tput sgr0   || tput me      )
-    #blink=$(   tput blink  || tput mb      )
-    italic=$(   tput sitm   || tput ZH      )
+    alt=$(      tput smcup  || tput ti      ) # Start alt display
+    ealt=$(     tput rmcup  || tput te      ) # End   alt display
+    hide=$(     tput civis  || tput vi      ) # Hide cursor
+    show=$(     tput cnorm  || tput ve      ) # Show cursor
+    save=$(     tput sc                     ) # Save cursor
+    load=$(     tput rc                     ) # Load cursor
+    bold=$(     tput bold   || tput md      ) # Start bold
+    stout=$(    tput smso   || tput so      ) # Start stand-out
+    estout=$(   tput rmso   || tput se      ) # End stand-out
+    under=$(    tput smul   || tput us      ) # Start underline
+    eunder=$(   tput rmul   || tput ue      ) # End   underline
+    reset=$(    tput sgr0   || tput me      ) # Reset cursor
+    blink=$(    tput blink  || tput mb      ) # Start blinking
+    italic=$(   tput sitm   || tput ZH      ) # Start italic
+    eitalic=$(  tput ritm   || tput ZR      ) # End   italic
 [[ $TERM != *-m ]] && {
     red=$(      tput setaf 1|| tput AF 1    )
     green=$(    tput setaf 2|| tput AF 2    )
@@ -359,7 +364,7 @@ log() {
                 end='.. '
                 type=updateProgress ;;
             P)
-                type=doneProgress ;;
+                type=stopProgress ;;
             r)
                 ruler='____' ;;
         esac
@@ -410,7 +415,7 @@ log() {
             fi
         ;;
 
-        doneProgress)
+        stopProgress)
             case $exitcode in
                 0)  printf -v logMsg "done${format:+ ($format)}.\n" "${args[@]}"
                     if (( _logColor )); then
@@ -440,6 +445,13 @@ log() {
         mkdir -p "${_logFile%/*}" && touch "$_logFile"
     fi
 
+    # Stop the spinner.
+    if [[ $type = stopProgress && $_logSpinner ]]; then
+        kill "$_logSpinner"
+        wait "$_logSpinner" 2>/dev/null
+        unset _logSpinner
+    fi
+
     # Output the ruler.
     if [[ $ruler ]]; then
         printf >&2 '%s\n' "$(hr "$ruler")"
@@ -451,6 +463,17 @@ log() {
     printf >&2 '%s' "$conMsg"
     [[ -w $_logFile ]] \
         && printf >> "$_logFile" '%s' "$logMsg"
+
+    # Start the spinner.
+    if [[ $type = startProgress && ! $_logSpinner ]]; then
+        {
+            set +m
+            trap 'printf %s "$show"' EXIT
+            printf %s "$hide"
+            while printf "$eel$blue$bold[$reset%s$reset$blue$bold]$reset\b\b\b" "${spinner[s++ % ${#spinner[@]}]}" && sleep .1
+            do :; done
+        } & _logSpinner=$!
+    fi 2>/dev/null
 
     return $exitcode
 }

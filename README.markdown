@@ -5,7 +5,7 @@ Bash is the POSIX-compliant shell you find on most any UNIX system. This library
 
 Amoungst the many features it provides are:
 
- * `trc`, `dbg`, `inf`, `wrn`, `err`, `ftl`: allow easy printf-style outputting at different verbosity levels.
+ * `trc`, `dbg`, `inf`, `wrn`, `err`, `ftl`: allow easy `printf`-style outputting at different verbosity levels.
  * `emit`, `spinner`: provide several types of spinners to keep the user enthralled while waiting for some lengthy task to complete.
  * `ask`: a simple function that makes taking user input just that bit easier.
  * `showHelp`: an easy way to show some documentation on your script's usage.
@@ -13,7 +13,7 @@ Amoungst the many features it provides are:
 
 
 #Usage
-Ideally, install bashlib in your `PATH` and put this at the top of your scripts:
+Ideally, install `bashlib` in your `PATH` and put this at the top of your scripts:
 
     source bashlib
 
