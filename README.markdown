@@ -1,7 +1,5 @@
-# About
-A bunch of scripts in different languages that fulfill different purposes.
+This repo holds some generally useful scripts I've written.  If any of these turn out useful to you, buy some beer in celebration and drink it to my health and good fortune.
 
-# Bash
 ## [bashlib](/lhunath/scripts/tree/master/bash/bashlib)
 `bashlib` is a library of convenience functions for the GNU Bash shell.
 
@@ -15,7 +13,6 @@ Amoungst the many features it provides are:
  * `showHelp`: an easy way to show some documentation on your script's usage.
  * And lots of other tiny but helpful functions for various tasks.
 
-
 ### Usage
 The recommended way of using `bashlib` is by creating a symlink in `PATH` to the `bashlib` script in your check-out of this repo.  Eg.
 
@@ -26,6 +23,7 @@ Then your scripts can use it by doing a `source` without specifying the location
     source bashlib
 
 See the comments in the file for information about what the functions do and how to use them.
+
 
 ## [timetravel](/lhunath/scripts/tree/master/bash/timetravel)
 `timetravel` is a command-line tool for accessing the files in your Time Machine backups.
@@ -54,6 +52,7 @@ When no operation option is given (such as `-l`, `-r` or `-d`), `timetravel` wil
 When showing the contents of directories, their files are enumerated.  When showing the contents of a file, a pager is opened for it if `timetravel`'s standard output is a terminal.  If `timetravel` is piped or redirected, the contents of the file is written out raw.  This allows you to recover files to new filenames or do things like searching them with `grep`.
 
 When no host, time or disk is specified (using `-H`, `-T` or `-D`), `timetravel` will use default values for them.  The host will default to the name of your computer, the time will default to `Latest` and the disk will default to `Macintosh HD`.  When using `timetravel` to list snapshots (the `-l` option), these will default to empty values instead.  Note that when listing snapshots, these values are actually search prefixes.  If, for example, you use `-T 2012-06`, all snapshots in June 2012 will be searched.  Empty values will cause all snapshots of that type to be searched.
+
 
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>
