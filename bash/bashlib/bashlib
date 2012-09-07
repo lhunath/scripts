@@ -1229,7 +1229,7 @@ showHelp() {
 quote() {
 
     # Initialize the defaults.
-    local arg escape=0 quotedArgs=()
+    local arg escape=0 q="'\\''" quotedArgs=()
 
     # Parse the options.
     while [[ $1 = -* ]]; do
@@ -1245,7 +1245,7 @@ quote() {
         if (( escape )); then
             quotedArgs+=("$(printf "%q"     "$arg")")
         else
-            quotedArgs+=("$(printf "'%s'"   "${arg//"'"/"\\'"}")")
+            quotedArgs+=("$(printf "'%s'"   "${arg//"'"/$q}")")
         fi
     done
 
