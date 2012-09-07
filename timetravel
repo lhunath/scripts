@@ -41,7 +41,7 @@ fancypager() {
 }
 
 TIMEMACHINE=${TIMEMACHINE:-/Volumes/MobileBackups/Backups.backupdb}
-while getopts :H:T:D:lrdf opt; do
+while getopts :H:T:D:lrdfh opt; do
     case $opt in
         H) host=$OPTARG;;
         T) time=$OPTARG;;
@@ -50,6 +50,20 @@ while getopts :H:T:D:lrdf opt; do
         r) mode=restore;;
         d) mode=diff;;
         f) force=1;;
+        h)
+            showHelp timetravel 'A CLI tool for accessing time machine backups.' lhunath \
+                -H      'Hostname of the machine whose backups to inspect.
+                        Default: empty (list), hostname (others).' \
+                -T      'Time when the snapshot to inspect was taken.
+                        Default: empty (list), "Latest" (others).' \
+                -D      'The name of the volume to search.
+                        Default: empty (list), "Macintosh HD" (others)' \
+                -l      'List mode: enumerate all known snapshots for the given file.
+                        Hostname, time and disk are prefixes (eg. -T 2010 shows all snapshots made in 2010).' \
+                -r      'Recover mode: the file is copied from the snapshot back to the disk.' \
+                -d      'Diff mode: The difference between the snapshot and the current version is shown.' \
+                -f      'Force unsafe operations.  Recover mode will overwrite existing files.'
+            exit ;;
     esac
 done
 shift $((OPTIND-1))
