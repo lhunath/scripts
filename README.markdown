@@ -2,7 +2,7 @@
 A bunch of scripts in different languages that fulfill different purposes.
 
 # Bash
-## bashlib
+## [bashlib](tree/master/bash/bashlib)
 `bashlib` is a library of convenience functions for the GNU Bash shell.
 
 Bash is the POSIX-compliant shell you find on most any UNIX system. This library makes it a little easier to make sane and appealing bash scripts.
@@ -17,7 +17,7 @@ Amoungst the many features it provides are:
 
 
 ### Usage
-The recommended way of using `bashlib` is by creating a symlink in `PATH` to the `bashlib` script in your your check-out of this repo.  Eg.
+The recommended way of using `bashlib` is by creating a symlink in `PATH` to the `bashlib` script in your check-out of this repo.  Eg.
 
     ln -s ~/.src/scripts/bash/bashlib/bashlib ~/.bin/
 
@@ -27,15 +27,14 @@ Then your scripts can use it by doing a `source` without specifying the location
 
 See the comments in the file for information about what the functions do and how to use them.
 
-## timetravel
+## [timetravel](tree/master/bash/timetravel)
 `timetravel` is a command-line tool for accessing the files in your Time Machine backups.
 
 Time Machine is an OS X technology for performing continuous backups of your files to local or remote disks.  Since OS X 10.7 (Lion), Time Machine makes local backups of all your files.  This means you have snapshot versions of all your files at different times in the past.  If you are running Lion right now, you already have these snapshots.
 
 To access all this backup data, OS X comes with a program named Time Machine, which opens a GUI front-end that lets you use Finder for browsing your backups.  This is really slow and tedious for anyone used to navigating their system on the command-line.  To solve this problem, `timetravel` was written.
 
-[See a codestre.am demo.
-![Screenshot](http://stuff.lhunath.com/shots/shot.1333636642.png )](http://codestre.am/18c63b95276c6fa8fd1c28e24)
+[See a codestre.am demo.](http://codestre.am/18c63b95276c6fa8fd1c28e24)
 
 ### Usage
 `timetravel` takes the following options:
