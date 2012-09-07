@@ -2,7 +2,7 @@
 A bunch of scripts in different languages that fulfill different purposes.
 
 # Bash
-## [bashlib](tree/master/bash/bashlib)
+## [bashlib](/lhunath/scripts/tree/master/bash/bashlib)
 `bashlib` is a library of convenience functions for the GNU Bash shell.
 
 Bash is the POSIX-compliant shell you find on most any UNIX system. This library makes it a little easier to make sane and appealing bash scripts.
@@ -27,7 +27,7 @@ Then your scripts can use it by doing a `source` without specifying the location
 
 See the comments in the file for information about what the functions do and how to use them.
 
-## [timetravel](tree/master/bash/timetravel)
+## [timetravel](/lhunath/scripts/tree/master/bash/timetravel)
 `timetravel` is a command-line tool for accessing the files in your Time Machine backups.
 
 Time Machine is an OS X technology for performing continuous backups of your files to local or remote disks.  Since OS X 10.7 (Lion), Time Machine makes local backups of all your files.  This means you have snapshot versions of all your files at different times in the past.  If you are running Lion right now, you already have these snapshots.
