@@ -66,5 +66,17 @@ java web application distributions.
 - mvn-tools: Installer / common library for the framework.
 - mvn-web: Used to manage live extracted files from JBoss to a safe location where you can easily edit and see live changes.  Also allows you to apply your edits to these files back onto your repository.
 
+## tunmgrd
+
+`tunmgrd` is a daemon that you use to bring up and keep up SSH connections.  Great for setting and keeping up tunnels, port forwards and master connections.
+
+I've had a really hard time finding a quality product that did this for me in a portable and sane manner.  In the end, I decided I'd be better off writing it myself.  The goals for `tunmgrd` is:
+
+- Good and safe code
+- Extensive configurability
+- Clear and correct documentation
+- Useful reporting
+- Useful client utilities to interact with the daemon
+
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>
