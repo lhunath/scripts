@@ -53,6 +53,18 @@ When showing the contents of directories, their files are enumerated.  When show
 
 When no host, time or disk is specified (using `-H`, `-T` or `-D`), `timetravel` will use default values for them.  The host will default to the name of your computer, the time will default to `Latest` and the disk will default to `Macintosh HD`.  When using `timetravel` to list snapshots (the `-l` option), these will default to empty values instead.  Note that when listing snapshots, these values are actually search prefixes.  If, for example, you use `-T 2012-06`, all snapshots in June 2012 will be searched.  Empty values will cause all snapshots of that type to be searched.
 
+## [mvn-tools](/lhunath/scripts/tree/master/bash/mvn-tools)
+
+`mvn-tools` is a collection of utilities for working with maven repositories and
+java web application distributions.
+
+- mvn-auto: Build only the Maven artifacts in a multi-module project that have been modified since the last build. Compares the mtime of each file in `src/` against the product in `target/` to determine whether the artifact is outdated.
+- mvn-install: Add a Java archive or ZIP as an artifact to the local repository. The script asks you for all required information.
+- mvn-meta: Maintains a tree that caches hashes of repository files. Primarily a library; used by mvn-web.
+- mvn-release: Generate releases for your artifacts, deploy and tag/branch in GIT. Uses maven-release-plugin and works best when you extract all versions of project artifacts out of your pom.xml's (except from <parent>).
+- mvn-sync: Uses rsync to synchronize your local repository with a remote one for building remotely.
+- mvn-tools: Installer / common library for the framework.
+- mvn-web: Used to manage live extracted files from JBoss to a safe location where you can easily edit and see live changes.  Also allows you to apply your edits to these files back onto your repository.
 
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>
