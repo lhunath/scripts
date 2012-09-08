@@ -1,0 +1,131 @@
+#   tunmgrd(1) configuration file
+#
+# This file enumerates and configures the ssh connections you want tunmgrd to set up for you.
+#
+# The syntax is that of a bash(1) array, so keep the following in mind:
+#   - 'Quote' every field that contains whitespace or glob characters (*?[]).
+#   - You *can* use other bash syntax such as $parameters, $(command substitution) etc.
+#   - If you're unsure, you should probably 'quote your fields' to prevent their contents from accidentally being evaluated as bash code.
+#   - You can't use a \ to put a single quote (') in a single quoted field.  Do this instead:  'Hi mom, it'\''s me!', or this: "Hi mom, it's me".
+#   - Note that "double quoted" fields still allow all bash $expansions, so don't use double quotes if you want dollar signs (or `) in your fields.
+#
+# You can also specify the directory of connection log files using the logDir string.  This defaults to TMPDIR or /tmp if it's not set.
+#
+#
+# QUICK FIELD REFERENCE:
+#
+# t                 - Connection type.   See the table below in the TYPES section for information on the different types.
+# Name              - The name is only just for identifying the connection to you when it's referenced in output.
+#                       Default: "Tunnel X" (where X is the number of the tunnel declaration in this file, base 0).
+# Host              - The remote username and hostname that the connection should be established with.
+#                       Default: "localhost"
+# Local Forwards    - Port forward declarations that bind a local port which forwards to a host through the connection.
+# Remote Forwards   - Port forward declarations that bind a port on the remote host which forwards to a host back through the connection.
+# Remote Command    - A field that specifies a bash(1) statement to execute on the remote side.  The connection ends when this command does.
+#                       Default: "read"
+# Extra Options     - Use separate fields to specify multiple arguments that should be appended to the ssh(1) command for the connection.
+#
+#
+# FIELD SYNTAX:
+#
+# Empty fields should always be written as '' or -.
+# 
+# The host field takes a username and hostname in the form of user@host.  'user' is the username of the user remote user you wish to authenticate as.
+# 'host' is the hostname to which you wish to establish a connection.  It can be a DNS name or IP address.  You cannot specify a port to connect to.
+# By default, ssh(1) will connect to port 22.  If you don't want this, you can either use your ssh_config to specify how to connect to the host or
+# add -p x to the Extra Options for your connection, where x is the port on the remote host you wish to connect to.
+#
+# Forward declarations use the syntax host-x:port-x:host-y:port-y.  You can specify multiple forwards by including them all in the field and
+# separating them with whitespace.  See the FORWARDING section below for more information on the syntax.
+#
+# The remote command must be a single field (so you should quote the whole command).  It should contain a bash statement that will be executed on
+# the remote host after establishing the connection.  As soon as this command terminates, the connection will end.  To keep the connection alive
+# after performing some short-lived task in your command, execute "read" afterwards by appending this to the end of your command: "; read".
+# For example, you can use this to keep a connection up for a limited amount of time by using the command: "sleep 3600" (one hour).
+#
+# Extra Options are ssh(1) specific options to include in the ssh(1) command that is used to initiate the connection.  Refer to the ssh(1) manual
+# for information on which options are available to you.  Specify your options by using one field per argument.  This allows you to specify arguments
+# that contain whitespace by quoting them individually.
+#
+#
+# FORWARDING:
+#
+# To recap, the syntax for forwarding definitions is: host-x:port-x:host-y:port-y
+#
+# For Local Forwards, host-x and port-x specify the IP address and port number on this host that ssh(1) should bind itself on to listen for incoming
+# connections.  So, host-x has to resolve to an IP address of *this* machine.  Any incoming connections will be tunnelled through the connection and
+# the remote host will connect them to host-y on port-y.  Thus, anyone connecting to host-x (*this* machine) on port-x will actually be connecting to
+# host-y on port-y from the remote side of this connection.
+# For Remote Forwards, host-x and port-x specify the IP address and port number on the remote side of this connection that ssh(1) should bind itself
+# on to listen for incoming connections.  So, host-x has to resolve to an IP address of the *remote* machine.  Anyone connecting to host-x
+# (the *remote* machine) and port-x will actually have their connection sent through this connection and *this* machine will patch them through to
+# host-y on port-y.
+#
+# You can omit host-x: in the syntax to have it default to 'localhost'.  Specifying it explicitly is mostly just interesting if you want port-x to
+# be bound only on a specific IP of yours, or to all your IPs (in which case you'd use * for host-x -- though note that your ssh config has to be
+# set up to allow this).
+#
+# An example:
+# Remote's MySQL server only accepts connections from the machine it runs on.  You want to be able to access it.
+# Local Forward: "localhost:3306:localhost:3306" or just "3306:localhost:3306"
+#
+# My MySQL Client --[ localhost:3306 ]--> 3306:ME --[ ssh ]--> REMOTE --[ localhost:3306 ]--> 3306:Remote's MySQL Server
+#
+#
+# TYPES:
+#
+# Connection types allow you to specify a purpose for your connection.  They will make tunmgrd behave differently with your connection.
+#
+# Note that this field MUST NOT be empty.  Specifying '' or - for this field will break your entire configuration.  Use . instead.
+#
+#   Type | Description
+#       ---
+#   .       Ordinary connection.  No special features.
+#   m       Control Master connection.  This will configure the connection to act as an ssh(1) Control Master.
+#   l       Local script.  No remote connection will be created.  See the LOCAL SCRIPT section for more details.
+#
+#
+# LOCAL SCRIPT:
+#
+# When the type of a connection is 'l', the connection describes a local script instead of a remote connection.
+#
+# No remote connection will be set up and managed by tunmgrd(1).  This is only useful if you want to manage scripts through tunmgrd(1).
+#
+# The "Remote Command" will be executed locally by a bash shell.  The "Extra Options" will be available as positional parameters
+# in the script.  The "Name", "Host", "Local Forwards" and "Remote Forwards" fields will be available in the script in variables named
+# respectively "name", "host", "lforwards", "rforwards".
+#
+# The connection will appear up for as long as the command process is alive.  When the process goes down, the script will be restarted
+# just like a normal connection would.
+#
+#
+# AUTHOR:
+#
+# tunmgrd(1) was written by Maarten Billemont.
+# http://www.lhunath.com - lhunath@gmail.com
+
+
+# TMPDIR=/tmp
+# logDir=/var/log/tunmgr
+# pipe=/var/run/tunmgr.pipe
+# verbosity=2
+
+tunnels=(
+#   t Name              Host                            Local Forwards          Remote Forwards         Remote Command          Extra Options
+#   - --------------    ------------------------------  ----------------------  ----------------------  ----------------------  ----------------------
+
+#   Keep a few SSH master connection up to for instant ssh'ing to these hosts.
+    m "Lyndir"          lhunath@lyndir.com              -                       -                       -                       -
+    m "Lyndir (Maven)"  lhunath@maven.lyndir.com        -                       -                       -                       -
+    m "Lyndir (Satura)" lhunath@satura.lyndir.com       -                       -                       -                       -
+    m "Lyndir (Avaria)" lhunath@avaria.lyndir.com       -                       -                       -                       -
+
+#   Manage some local scripts.  This one will connect to my IRC proxy and Growl-notify me of events.
+    l "Lyndir (IRC)"    irc.lyndir.com                  -                       -                       eventwatcher            -
+
+#   At work, I need to ssh into the firewall for it to upon up access to the development network.
+    . "Lin.k DePunt"    mbillemo@depunt-fw.lin-k.net    -                       -                       -                       -
+
+#   Forward an intranet IRC server for access from my hosted irssi client at avaria.
+    . "Lin.k IRC"       lhunath@avaria.lyndir.com       -                       6666:buildserver:6667   -                       -
+)

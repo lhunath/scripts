@@ -1,0 +1,16 @@
+INSTALLING
+
+Installing tunmgrd involves making it executable and providing access to it
+and the included "bashlib" from your PATH.
+
+
+CONFIGURING
+
+See tunmgrd.conf.sample for information on setting up your configuration.
+Copy the file to ~/.tunmgrd.conf for a quick-start.
+
+
+LAUNCHING
+
+Use your OS' init system to launch tunmgrd on startup or invoke it yourself
+after first logging in to bring up your connections.
