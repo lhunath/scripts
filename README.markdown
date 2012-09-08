@@ -78,5 +78,9 @@ I've had a really hard time finding a quality product that did this for me in a 
 - Useful reporting
 - Useful client utilities to interact with the daemon
 
+## Usage
+
+Copy `tunmgrd.conf.sample` to `~/.tunmgrd.conf` and run `tunmgrd`.
+
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>

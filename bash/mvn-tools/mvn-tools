@@ -22,9 +22,9 @@
 #   * http://lhunath.lyndir.com                                               #
 #   * Maarten Billemont.                                                      #
 #                                                                             #
+source "${BASH_SOURCE%/*}/bashlib"                                            #
 set -e
 trap 'echo "$BASH_SOURCE:$BASH_LINENO: ${FUNCNAME:+$FUNCNAME:}$BASH_COMMAND failed with exit code: $?"' ERR
-[[ $0 = */* && -e ${0%/*}/bashlib ]] && source "${0%/*}/bashlib" || source bashlib
 
 # Install all files necessary for mvn-tools.
 installTools() {

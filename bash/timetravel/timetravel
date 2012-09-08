@@ -22,7 +22,7 @@
 #   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont                                                       #
 #                                                                             #
-source "${BASH_SOURCE%/*}/bashlib"
+source "${BASH_SOURCE%/*}/bashlib"                                            #
 _logInfColor=$green 
 
 fancydiff() {

@@ -22,7 +22,7 @@
 #   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont.                                                      #
 #                                                                             #
-source bashlib                                                                #
+source "${BASH_SOURCE%/*}/bashlib"                                            #
 
 
 # Utilities
