@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       Mvn-Tools -- Initialize the Maven Tools.                              #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+set -e
+trap 'echo "$BASH_SOURCE:$BASH_LINENO: ${FUNCNAME:+$FUNCNAME:}$BASH_COMMAND failed with exit code: $?"' ERR
+[[ $0 = */* && -e ${0%/*}/bashlib ]] && source "${0%/*}/bashlib" || source bashlib
+
+# Install all files necessary for mvn-tools.
+installTools() {
+    local from=$1 to=$2
+
+    for file in "$from/"{bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
+        cp "$file" "$to/"
+        touch -r "$file" "$to/${file##*/}"
+    done
+}
+# Check for update from repository.
+updateCheck() {
+    local from=$1 outdated=
+    [[ -d $from ]] || return 0
+
+    for tool in {bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
+        [[ "$(type -P "$tool")" -ot "$from/$tool" ]] && { outdated=installed; break; }
+        [[ "$(type -P "$tool")" -nt "$from/$tool" ]] && { outdated=source; break; }
+    done
+
+    case $outdated in
+        installed)
+            if ask -Y!n "An update is available for mvn-tools.  Update now?"; then
+                destination=$(type -P mvn-tools); destination=${destination%/*}
+                installTools "$from" "$destination"
+
+                emit "Successfully updated mvn-tools.  Please rerun your command."
+                exit
+            fi      ;;
+        source)
+            if ask -Y!n "Your installed mvn-tools is more recent than that of the repository.  Update repository?"; then
+                source=$(type -P mvn-tools); source=${source%/*}
+                installTools "$source" "$from"
+
+                emit "Successfully updated mvn-tools.  Please rerun your command."
+                exit
+            fi      ;;
+       '') return 0 ;;
+   esac
+}
+
+# When executed instead of sourced; install mvn-tools.
+(( ! BASH_LINENO )) && {
+
+    # Check if installed.
+    if [[ -x $(type -P mvn-tools) ]]; then
+        updateCheck "${0%/*}"
+
+    else
+        # Check if we know the source location.
+        if [[ $0 = */mvn-tools ]]; then
+            if ask -Y!n "mvn-tools is not installed.  Do you want to install it?"; then
+                emit -n "Your PATH is: $PATH"$'\n'
+                IFS=: read -r -a paths <<< "$PATH"
+                anyAccess=0
+                for path in "${paths[@]}"; do
+                    [[ -w $path ]] && { anyAccess=1; break; }
+                done
+                if (( ! anyAccess )); then
+                    emit -y "You don't have write access to any location in PATH."
+                    emit -y "Perhaps you should create a user-specific ~/.bin and add it to PATH?"
+                    exit 1
+                fi
+                while true; do
+                    destination=$(ask "Where do you want to install mvn-tools?  Specify a path that is in your PATH:")
+                    [[ ! -d $destination ]] && { emit -r "Destination '$destination' does not exist."; continue; }
+                    [[ ! -w $destination ]] && { emit -r "You don't have write access to '$destination'."; continue; }
+
+                    # All checks passed, destination is valid.
+                    break
+                done
+
+                # Install mvn-tools.
+                installTools "${0%/*}" "$destination"
+
+                # Try to guess the root of a repository to prepare for mvn-tools usage.
+                root=$(cd "${0%/*}/../"; echo "$PWD")
+                if [[ ! -e $root/.mvn-tools ]]; then
+                    if ask -Y!n "Is '$root' the root of a repository you want to use with mvn-tools?"; then
+                        install -m 0640 "${0%/*}/.mvn-tools.sample" "$root/.mvn-tools"
+                    fi
+                fi
+            fi 
+        fi
+    fi
+
+    exit
+}
+
+# Find the project's root.
+root=$PWD; while [[ ! -e "$root/.mvn-tools" ]]; do
+    root=${root%/*}
+    [[ $root = / || $root = $HOME ]] && { emit -r "Project's .mvn-tools not found, can't determine root of operations."; exit 1; }
+done
+
+# Check for updates.
+updateCheck "$root/scripts"
+
+# Defaults
+distribution=
+remote=
+remoteRepo=
+releasePom=0
+
+# Read user configuration
+[[ -e $HOME/.mvn-tools ]] && source "$HOME/.mvn-tools"
+[[ -e $root/.mvn-tools ]] && source "$root/.mvn-tools"

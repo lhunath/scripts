@@ -1,0 +1,144 @@
+#! /usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       Mvn-Meta -- Manage a cache of metadata for repository sources.        #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+source mvn-tools || exit
+
+metabase=$(cd "$root" && echo "$PWD") || exit
+metacache=$(mkdir -p "$root/.meta" && cd "$root/.meta" && echo "$PWD") || exit
+
+# updateHash path
+#   Update the meta hash for the given repository file.
+#   By default, the file is only updated when the meta file is outdated or doesn't exist.  Specify -f to update it regardless.
+updateHash() {
+    local arg
+    [[ ! $metacache || ! $metabase ]] && {
+        emit -r "Meta vars not set, aborting."
+        exit
+    }
+
+    OPTIND=0
+    while getopts :f arg; do
+        case $arg in
+            f) forced=1  ;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    local f=$1
+    [[ $f = /* ]] || f=$PWD/$f
+    f=$(cd "${f%/*}" && echo "$PWD/${f##*/}") || return
+    local mf=$metacache/${f#$metabase/}
+
+    mkdir -p "${mf%/*}"
+    if (( forced )) || [[ -f $f && ! -e $mf || ! $f -ot $mf ]]; then
+        openssl md4 < "$f" > "$mf"
+    fi
+}
+
+# updateMeta
+#   Update the meta hashes from the repository files.
+#   By default, we only create hashes for missing files.  Specify -r to rebuild all the hashes.
+updateMeta() (
+    local arg
+
+    OPTIND=0
+    while getopts :aq arg; do
+        case $arg in
+            r) rebuild=1    ;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    cd "$metabase"
+    export -f updateHash
+    export metacache metabase rebuild
+    find . \( -type d ! \( -exec bash -c 'test -e "$1/pom.xml"' -- {} \; -o -name src -o -path '*/src/*' \) -prune \) -o \
+            ! -type d -path '*/src/main/*' -exec bash -c '
+                shopt -s nullglob
+                for f; do
+                    [[ -f "$f" ]] && updateHash ${rebuild:+-f} "$f"
+                done
+                :' -- {} +
+)
+
+# getHash path
+#   Output the MD4 hash in the cache for the repository file at the given path.
+getHash() (
+    local f=$1
+    [[ $f = /* ]] || f=$PWD/$f
+    f=$(cd "${f%/*}"; echo "$PWD/${f##*/}")
+    local mf=$metacache/${f#$metabase}
+
+    updateHash "$f"
+    cat "$mf"
+)
+
+# findWithHash hash [name]
+#   Find the repository file that has the given MD4 hash.
+#   When [name] is specified, return only repository files of the given name (speeds up the operation).
+findWithHash() (
+    local all=0 quiet=0 found=0 f arg
+
+    OPTIND=0
+    while getopts :aq arg; do
+        case $arg in
+            a) all=1    ;;
+            q) quiet=1  ;;
+        esac
+    done
+    shift "$((OPTIND - 1))"
+
+    cd "$metacache"
+    while read mf; do
+        [[ ! -e "$metabase/$mf" ]] && {
+            rm "$mf"
+            continue
+        }
+
+        updateHash "$metabase/$mf"
+
+        [[ $(<"$mf") = $1 ]] && {
+            if (( quiet )); then
+                return 0;
+            else
+                found=1
+                ( cd "$metabase"; echo "$PWD/${mf#./}" )
+                (( all )) || break
+            fi
+        }
+    done < <(find . -type f ${2:+-name "$2"})
+
+    (( found ))
+)
+
+# When executed, just update the cache.
+(( ! BASH_LINENO )) && {
+    if (( $# )); then
+        "$@"
+    else
+        emit "Updating cache" --
+            updateMeta
+        emit -$?
+    fi
+} ||:

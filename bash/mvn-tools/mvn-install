@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       Mvn-Install -- Install an archive in the local Maven repository.      #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+source bashlib
+
+
+# Validate arguments.
+while getopts :fdu:h opt; do
+    case $opt in
+        f) force=1
+            ;;
+        d) deploy=1
+           url=${url:-scpexe://maven.lyndir.com/usr/local/scm/maven2}
+            ;;
+        u) url=$OPTARG
+            ;;
+		h) showHelp \
+			'Install Maven Artifact' \
+            "Installs or deploys files as maven artifacts to a local or remote repository." \
+			'lhunath' \
+			\
+            ''                  "Each non-option argument is a file to install or deploy." \
+            'Options'           '' \
+			'-f'                "Don't ask again for known metadata values." \
+            '-d'                "Deploy remotely instead of installing." \
+            '-u url'            "The location where the files should be installed or deployed to."
+            exit
+            ;;
+    esac
+done
+shift $((OPTIND-1))
+
+# Defaults.
+url=${url:-file://$HOME/.m2/repository/}
+
+(( ! $# )) && {
+    emit -R "Please specify the archives to process as arguments to this script."
+    exit 1
+}
+for archive; do
+    [[ $archive != *.?ar ]] && {
+        emit -R "The file '$archive' is not a valid Java Archive file."
+        ask -y!N "Are you sure you want to submit this to the maven repository?" || exit 1
+    }
+    [[ ! -e $archive ]] && {
+        emit -R "The archive '$archive' does not exist."
+        exit 1
+    }
+done
+
+# Add each archive.
+for file; do
+    
+    # Guess a few parameters from the filename.     # a/b/foo-bar-2.0-sources.jar
+
+    archive=${file##*/}                             # foo-bar-2.0-sources.jar
+    emit "For: $archive"
+
+    type=${archive##*.}                             # jar
+
+    version=${archive##*-[0-9]}                     # .0-sources.jar
+    tmp=${archive%$version}                         # foo-bar-2
+    version=${tmp: -1}${version%.*}                 # 2.0-sources
+    [[ $version = [0-9]* ]] || version=
+
+    [[ $version ]] && \
+        name=${archive%%-$version*} || \
+        name=${archive%.$type}
+    name=${name##*/}                                # foo-bar
+
+    IFS=- read version classifier <<< "$version"    # 2.0 sources
+    classifier=${classifier:-none}
+    case classifier in
+        src)    classifier=sources ;;
+        doc)    classifier=javadoc ;;
+    esac
+
+    pomFile=${file%.*}                              # a/b/foo-bar-2.0-sources
+    pomFile=${pomFile%-$classifier}.pom             # a/b/foo-bar-2.0.pom
+    if [[ -f $pomFile ]]; then
+        emit "Using: $pomFile"
+        generatePom=
+        name=$(xpath "$pomFile" '/project/artifactId/text()' 2>/dev/null | grep . || echo "$name")
+        group=$(xpath "$pomFile" '/project/groupId/text()' 2>/dev/null | grep . || echo "$group")
+        version=$(xpath "$pomFile" '/project/version/text()' 2>/dev/null | grep . || echo "$version")
+        type=$(xpath "$pomFile" '/project/type/text()' 2>/dev/null | grep . || echo "$type")
+    else
+        pomFile=
+        generatePom=true
+    fi
+
+    # Ask the user to fill in/confirm the necessary parameters.
+    if [[ ! $group ]] || (( ! force )); then group=$(ask +"$group" 'Group:'); fi
+    if [[ ! $name ]] || (( ! force )); then name=$(ask +"$name" 'Name:'); fi
+    if [[ ! $version ]] || (( ! force )); then version=$(ask +"$version" 'Version:'); fi
+    if [[ ! $type ]] || (( ! force )); then type=$(ask +"$type" 'Package Type:'); fi
+    if [[ ! $classifier ]] || (( ! force )); then classifier=$(ask +"$classifier" 'Classifier (sources/javadoc/none):'); fi
+    [[ $classifier = none ]] && classifier=
+
+    mvn deploy:deploy-file \
+      -Durl="$url" \
+      -Dfile="$file" \
+      -DgroupId="$group" \
+      -DartifactId="$name" \
+      -Dversion="$version" \
+      -Dpackaging="$type" \
+      -Dclassifier="$classifier" \
+      ${generatePom:+-DgeneratePom="$generatePom"} \
+      ${pomFile:+-DpomFile="$pomFile"}
+
+    echo "<dependency>"
+    echo "    <groupId>$bold$group$reset</groupId>"
+    echo "    <artifactId>$bold$name$reset</artifactId>"
+    echo "    <version>$bold$version$reset</version>"
+    [[ $type != jar ]] && {
+        echo "    <packaging>$bold$type$reset</packaging>"
+    }
+    [[ $classifier ]] && {
+        echo "    <classifier>$bold$classifier$reset</classifier>"
+    }
+    echo "</dependency>"
+done
