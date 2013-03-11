@@ -1,0 +1,152 @@
+#! /usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       parseJSON -- A utility for converting JSON into bash-readable data.   #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2010, lhunath                                                     #
+#   * http://www.lhunath.com                                                  #
+#   * Maarten Billemont                                                       #
+source bashlib
+
+### Parse JSON input data and output data in a format that's easily parsed by a bash while-read loop.
+#
+# The output describes the JSON hierarchy.  Objects are preceded by a dot (.), array indices are preceded by a hash (#) and values are preceded by an equal sign (=).
+# By default, the output will be line-based (each element in the hierarchy terminated by a newline).
+# If your data contains newlines or you want a safer output format, consider -z or -d to change the delimitor.
+# If this code parses your JSON incorrectly, turn on verbose mode with -v, fix the script and let me know: lhunath@lyndir.com
+
+
+# Default configuration.
+delimitor='\n'
+
+# Options to change configuration.
+while getopts :zd:v arg; do
+    case $arg in
+        z) delimitor='\0';;
+        d) delimitor=$OPTARG;;
+        v) _logVerbosity=3;;
+    esac
+done
+
+# Utilities.
+isObject() {
+    local context=$1
+
+    [[ $context = [^0-9]* ]]
+}
+isArray() {
+    local context=$1
+
+    ! isObject "$context"
+}
+pushContext() {
+    contextStack+=("$1")
+}
+popContext() {
+    local topIndex=$(( ${#contextStack[@]} - 1 ))
+
+    unset 'contextStack[topIndex]'
+}
+peekContext() {
+    local topIndex=$(( ${#contextStack[@]} - 1 ))
+
+    printf '%s' "${contextStack[topIndex]}"
+}
+writeData() {
+    local type
+
+    # Check if we have anything new to show
+    (( dirty )) && {
+        for context in "${contextStack[@]}"; do
+            # Is this context element an object(.) or array(#)?
+            isObject "$context" && type='.' || type='#'
+
+            printf '%s%s' "$type" "$context"
+        done
+
+        printf "=%s$delimitor" "$data"
+    }
+
+    data=
+    dirty=0
+}
+
+# Read loop.
+dirty=1
+while IFS= read -r -d '' -n1 char; do
+
+    if [[ $char = '"' ]]; then
+        if (( quoted = !quoted )); then
+            dbg "Quotes start."
+        else
+            dbg "Quotes end: %s" "$data"
+        fi
+        continue
+    fi
+
+    if (( ! quoted )); then
+        if [[ $char = '{' ]]; then
+            dbg "Object starts."
+
+            dirty=1
+            continue
+        elif [[ $char = '}' ]]; then
+            dbg "Object ends: %s" "$(peekContext)"
+
+            writeData
+            popContext
+            continue
+        elif [[ $char = '[' ]]; then
+            dbg "Array starts."
+
+            pushContext 0
+            continue
+        elif [[ $char = ']' ]]; then
+            dbg "Array ends: %s" "$(peekContext)"
+
+            writeData
+            popContext
+            continue
+        elif [[ $char = ':' ]]; then
+            dbg "Key: %s" "$data"
+
+            pushContext "$data"
+            data=
+            continue
+        elif [[ $char = ',' ]]; then
+            dbg "Element ends: %s" "$(peekContext)"
+
+            writeData
+
+            context=$(peekContext)
+            popContext
+            if isArray "$context"; then
+                pushContext "$((context + 1))"
+            fi
+
+            dirty=1
+            continue
+        elif [[ $char = [$' \n\r\t\v'] ]]; then
+            # Ignore unquoted whitespace
+            continue
+        fi
+    fi
+
+    data+=$char
+
+done
