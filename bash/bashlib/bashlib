@@ -401,7 +401,7 @@ log() {
     local exitcode=$? level=${level:-inf} supported=0 end=$'\n' type=msg conMsg= logMsg= format= colorFormat= date= info= arg= args=() colorArgs=() ruler=
 
     # Handle options.
-    unset OPTIND
+    local OPTIND=1
     while getopts :puPr arg; do
         case $arg in
             p)
@@ -895,32 +895,25 @@ report() {
 #  ______________________________________________________________________
 # |__ Ask _______________________________________________________________|
 #
-#       ask [-optionchars|+default] message...
+#       ask [-c optionchars|-d default] [-s|-S maskchar] message...
 #
-# Ask a question and read the user's reply to it.
+# Ask a question and read the user's reply to it.  Then output the result on stdout.
 #
-# By default, a reply is terminated by a newline.
+# When in normal mode, a single line is read.  If the line is empty and
+# -d was specified, the default argument is output instead of an empty line.
+# The exit code is always 0.
 #
-# You may use the options to switch into key mode.  In key mode, only a
-# single character is read.  The valid characters are specified in the
-# optionchars.  A capital option character makes that option the default.
-#
-# If the reply character in key mode was not amoungst the provided options
-# the default is assumed instead.  If no default was given, an exit code
-# of 2 is returned.
-#
+# When in option mode (-c), the user is shown the option characters with
+# which he can reply and a single character is read.
+# If the reply is empty (user hits enter) and any of the optionchars are
+# upper-case, the upper-case option (= the default option) character will
+# be output instead of an empty line.
+# If the reply character is not amoungst the provided options the default
+# option is again output instead if present.  If no default was given, an
+# exit code of 2 is returned.
 # You may mark an optionchar as 'valid' by appending a '!' to it.  As a
 # result, an exit code of 0 will only be returned if this valid option
 # is replied.  If not, an exit code of 1 will be returned.
-#
-# If no option is marked as valid, the given reply is echoed and an exit
-# code of 0 is returned.
-#
-# You can specify the -# option to make ask hide the user's input.
-#
-# If you prefix the first argument with a + instead of a -, the remaining
-# argument is taken as the default string value and returned when no input
-# was received.  In this case, the exit code is 0 either way.
 #
 ask() {
    
@@ -931,7 +924,7 @@ ask() {
     }
  
     # Initialize the vars.
-    local arg
+    local opt arg
     local option=
     local options=
     local default=
@@ -940,31 +933,28 @@ ask() {
     local muteChar=
 
     # Parse the options.
-    if [[ $1 = +* ]]; then
-        option=${1#+}
-        default=$option
+    local OPTIND=1
+    while getopts :sS:c:d: opt; do
+        case $opt in
+            s)  silent=1 ;;
+            S)  silent=1 muteChar=$OPTARG ;;
+            c)  while read -n1 arg; do
+                    case $arg in
+                        [[:upper:]]) default=$arg ;;
+                        !) valid=${options: -1}; continue ;;
+                    esac
 
-        shift
-    else
-        for arg in $(getArgs "$(printf "%s" {a..z} {A..Z})!#%" "$@"); do
-            [[ $arg = [[:upper:]] ]] \
-                && default=$arg
-            [[ $arg = ! ]] \
-                && { valid=${options: -1}; continue; }
-            [[ $arg = '#' ]] \
-                && { silent=1 arg=; }
-            [[ $arg = '%' ]] \
-                && { silent=1 muteChar='*' arg=; }
-
-            options+=$arg
-        done
-    fi
+                    options+=$arg
+                done <<< "$OPTARG" ;;
+            d)  default=$OPTARG option=$default ;;
+        esac
+    done
 
     # Trim off the options.
-    while [[ $1 = -* ]]; do shift; done
+    shift $((OPTIND-1))
 
     # Figure out what FD to use for our messages.
-    [[ -t 1 ]]; local fd=$(( $? + 1 ))
+    [[ -t 1 ]] && local fd=1 || local fd=2
 
     # Ask the question.
     emit -yn "$*${option:+ [$option]}${options:+ [$options]} "
@@ -974,13 +964,13 @@ ask() {
         local reply
         while read -s -n1 && [[ $REPLY ]]; do
             reply+=$REPLY
-            printf "%s" "$muteChar"                                 >&$fd
+            printf '%s' "$muteChar"                                 >&$fd
         done
         REPLY=$reply
     else
         read -e ${options:+-n1} ${silent:+-s}
     fi
-    [[ $options && $REPLY ]] || (( silent )) && printf "\n"         >&$fd
+    [[ $options && $REPLY ]] || (( silent )) && printf '\n'         >&$fd
 
     # Evaluate the reply.
     while true; do
@@ -1184,9 +1174,9 @@ getArgs() {
 
     # Get the optstring.
     local optstring=$1; shift
-    local oOPTIND=$OPTIND OPTIND=1
 
     # Enumerate the arguments.
+    local OPTIND=1
     while getopts "$optstring" arg; do
         [[ $arg != '?' ]] && found=1
 
@@ -1194,7 +1184,6 @@ getArgs() {
             printf "%s${OPTARG:+ }%s%s" "$arg" "$OPTARG" "$delimitor"
     done
     OPTARGS=$(( OPTIND - 1 ))
-    OPTIND=$oOPTIND
 
     # Any arguments found?
     (( count )) && printf "%s" "$OPTARGS"
