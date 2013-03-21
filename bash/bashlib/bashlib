@@ -1029,32 +1029,37 @@ trim() {
 #  ______________________________________________________________________
 # |__ Reverse ___________________________________________________________|
 #
-#       reverse [-0] [elements ...] [<<< elements]
+#       reverse [-0|-d delimitor] [elements ...] [<<< elements]
 #
-# Reverse the order of the given elements.  Elements are read from command
-# arguments or standard input if no element arguments are given.
-# They are reversed and output on standard output.
+# Reverse the order of the given elements.
+# Elements are read from command arguments or standard input if no element
+# arguments are given.
+# The result is output on standard output.
 #
 # If the -0 option is given, input and output are delimited by NUL bytes.
+# If the -d option is given, input and output are delimited by the
+# character argument.
 # Otherwise, they are delimited by newlines.
 #
 reverse() {
    
     # Initialize the vars.
-    local elements delimitor=$'\n'
+    local elements=() delimitor=$'\n' i
 
     # Parse the options.
-    while [[ $1 = -* ]]; do
-        case $1 in
-            -0) delimitor=$'\0' ;;
-            --) shift; break ;;
+    local OPTIND=1
+    while getopts :0d: opt; do
+        case $opt in
+            0) delimitor=$'\0' ;;
+            d) delimitor=$OPTARG ;;
         esac
-        shift
     done
+    shift "$((OPTIND-1))"
 
     # Get the elements.
-    elements=( "$@" )
-    if (( ! ${#elements[@]} )); then
+    if (( $# )); then
+        elements=( "$@" )
+    else
         while IFS= read -r -d "$delimitor"; do
             elements+=("$REPLY")
         done
@@ -1062,8 +1067,78 @@ reverse() {
 
     # Iterate in reverse order.
     for (( i=${#elements[@]} - 1; i >=0; --i )); do
-        printf '%s%s' "${elements[i]}" "$delimitor"
+        printf "%s${delimitor:-'\0'}" "${elements[i]}"
     done
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
+# |__ Sort ______________________________________________________________|
+#
+#       sort [-0] [-c isAscending|-n] [elements ...] [<<< elements]
+#
+# Sorts the elements in ascending order.
+# Elements are read from command arguments or standard input if no element
+# arguments are given.
+# The result is output on standard output.
+#
+# By default, the elements will be sorted using lexicographic comparison.
+# If the -n option is given, the elements will be considered integer numbers.
+# If the -c option is given, the command name following it will be used
+# as a comparator.
+#
+# If given, isAscending comparator command will be executed for each element
+# comparison and will be passed two element arguments.  The command should
+# succeed if the first argument is less than the second argument for the
+# purpose of this sort.
+#
+# If the -0 option is given, input and output are delimited by NUL bytes.
+# If the -d option is given, input and output are delimited by the
+# character argument.
+# Otherwise, they are delimited by newlines.
+#
+# The sort is implemented by an insertion sort algorithm.
+#
+_sort_string_ascends() { [[ $1 < $2 ]]; }
+_sort_number_ascends() { (( $1 < $2 )); }
+sort() {
+   
+    # Initialize the vars.
+    local elements=() element delimitor=$'\n' i isAscending=_sort_string_ascends 
+
+    # Parse the options.
+    local OPTIND=1
+    while getopts :0nd:c: opt; do
+        case $opt in
+            0) delimitor=$'\0' ;;
+            d) delimitor=$OPTARG ;;
+            n) comparator=_sort_number_ascends ;;
+            c) isAscending=$OPTARG ;;
+        esac
+    done
+    shift "$((OPTIND-1))"
+
+    # Get the elements.
+    if (( $# )); then
+        elements=( "$@" )
+    else
+        while IFS= read -r -d "$delimitor"; do
+            elements+=("$REPLY")
+        done
+    fi
+
+    # Iterate in reverse order.
+    for (( i = 2; i < ${#elements[@]}; ++i )); do
+        for (( j = i; j > 1; --j )); do
+            element=${elements[j]}
+            if "$isAscending" "$element" "${elements[j-1]}"; then
+                elements[j]=${elements[j-1]}
+                elements[j-1]=$element
+            fi
+        done
+    done
+    printf "%s${delimitor:-'\0'}" "${elements[@]}"
 } # _____________________________________________________________________
 
 
