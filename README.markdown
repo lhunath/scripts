@@ -66,7 +66,7 @@ java web application distributions.
 - mvn-tools: Installer / common library for the framework.
 - mvn-web: Used to manage live extracted files from JBoss to a safe location where you can easily edit and see live changes.  Also allows you to apply your edits to these files back onto your repository.
 
-## tunmgrd
+## [tunmgrd](/lhunath/scripts/tree/master/bash/tunmgrd)
 
 `tunmgrd` is a daemon that you use to bring up and keep up SSH connections.  Great for setting and keeping up tunnels, port forwards and master connections.
 
@@ -78,9 +78,31 @@ I've had a really hard time finding a quality product that did this for me in a 
 - Useful reporting
 - Useful client utilities to interact with the daemon
 
-## Usage
+### Usage
 
-Copy `tunmgrd.conf.sample` to `~/.tunmgrd.conf` and run `tunmgrd`.
+Copy `tunmgrd.conf.sample` to `~/.tunmgrd.conf`, modify as desired and run `tunmgrd`.
+
+## [parseJSON](/lhunath/scripts/tree/master/bash/parseJSON)
+
+`parseJSON` is a filter used to convert JSON data into a structure much more friendly to parsing from bash scripts.
+
+Each output element describes one key-value structure in the JSON stream.  By default, elements are output separated by newlines (one on a line).  Elements consist of a sequence of type characters (`.` for object key and `#` for array index), followed by the value of the key, and finally a `=` followed by the value of the structure.  Eg. the output of:
+
+    parseJSON <<< '{"foo":"bar", "child":[5, 6, {"cow":"moo"}]}'
+
+is:
+
+    .foo=bar
+	.child#0=5
+	.child#1=6
+	.child#2.cow=moo
+
+### Usage
+`parseJSON` takes the following options:
+
+* `-z`: Use a NUL byte as delimitor between data structures.
+* `-d [delim]`: Use `delim` as delimitor between data structures.  `printf`-style escapes are accepted (eg. `\0`).
+* `-v`: Verbosely describe what happens during the parsing of the JSON data.
 
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>
