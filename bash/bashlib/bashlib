@@ -18,10 +18,115 @@
 # ___________________________________________________________________________ #
 #                                                                             #
 #                                                                             #
-# Copyright 2007-2011, lhunath                                                #
+# Copyright 2007-2013, lhunath                                                #
 #   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont                                                       #
 #                                                                             #
+
+
+
+#  ______________________________________________________________________ 
+# |                                                                      |
+# |                                            .:: TABLE OF CONTENTS ::. |
+# |______________________________________________________________________|
+# 
+#     chr decimal
+# Outputs the character that has the given decimal ASCII value.
+#
+#     ord character
+# Outputs the decimal ASCII value of the given character.
+#
+#     hex character
+# Outputs the hexadecimal ASCII value of the given character.
+#
+#     unhex character
+# Outputs the character that has the given decimal ASCII value.
+#
+#     max numbers...
+# Outputs the highest of the given numbers.
+#
+#     min numbers...
+# Outputs the lowest of the given numbers.
+#
+#     exists application
+# Succeeds if the application is in PATH and is executable.
+#
+#     eol message
+# Return termination punctuation for a message, if necessary.
+#
+#     hr pattern [length]
+# Outputs a horizontal ruler of the given length in characters or the terminal column length otherwise.
+#
+#     cloc
+# Outputs the current cursor location as two space-separated numbers: row column.
+#
+#     readwhile command [args]
+# Outputs the characters typed by the user into the terminal's input buffer while running the given command.
+#
+#     pushqueue element ...
+# Pushes the given arguments as elements onto the queue.
+#
+#     popqueue
+# Pops one element off the queue.
+#
+#     log [format] [arguments...]
+# Log an event at a certain importance level.  The event is expressed as a printf(1) format argument.
+#
+#     emit [options] message... [-- [command args...]]
+# Display a message with contextual coloring.
+#
+#     spinner [-code|message... [-- style color textstyle textcolor]]
+# Displays a spinner on the screen that waits until a certain time.
+#
+#     report [-code] [-e] failure-message [success-message]
+# This is a convenience function for replacement of spinner -code.
+#
+#     ask [-c optionchars|-d default] [-s|-S maskchar] message...
+# Ask a question and read the user's reply to it.  Then output the result on stdout.
+#
+#     trim lines ...
+# Trim the whitespace off of the beginning and end of the given lines.
+#
+#     reverse [-0|-d delimitor] [elements ...] [<<< elements]
+# Reverse the order of the given elements.
+#
+#     order [-0] [-c isAscending|-n] [elements ...] [<<< elements]
+# Orders the elements in ascending order.
+#
+#     mutex file
+# Open a mutual exclusion lock on the file, unless another process already owns one.
+#
+#     fsleep time
+# Wait for the given (fractional) amount of seconds.
+#
+#     getArgs [options] optstring [args...]
+# Retrieve all options present in the given arguments.
+#
+#     showHelp name description author [option description]...
+# Generate a prettily formatted usage description of the application.
+#
+#     shquote [-e] [argument...]
+# Shell-quote the arguments to make them safe for injection into bash code.
+#
+#     requote [string]
+# Escape the argument string to make it safe for injection into a regex.
+#
+#     shorten [-p pwd] path [suffix]...
+# Shorten an absolute path for pretty printing.
+#
+#     inArray element array
+# Checks whether a certain element is in the given array.
+#
+#     xpathNodes query [files...]
+# Outputs every xpath node that matches the query on a separate line.
+#
+#     hideDebug [on|off]
+# Toggle Bash's debugging mode off temporarily.
+#
+#     stackTrace
+# Output the current script's function execution stack.
+#
+_tocHash=690a2401636ee44fdf3c0eee8178eef0
 
 
 
@@ -40,6 +145,33 @@ shopt -s extglob
 shopt -s globstar
 } 2>/dev/null ||:
 
+# Generate Table Of Contents
+genToc() {
+    local line= comments=() usage= whatis= lineno=0 out= outhash= outline=
+    while read -r line; do
+        (( ++lineno ))
+
+        [[ $line = '#'* ]] && comments+=("$line") && continue
+        [[ $line = +([[:alnum:]])'() {' ]] && IFS='()' read func _ <<< "$line" && [[ $func != $FUNCNAME ]] && {
+            usage=${comments[3]##'#'+( )}
+            whatis=${comments[5]##'#'+( )}
+            [[ $usage = $func* && $whatis = *. ]] || err "Malformed docs for %s (line %d)." "$func" "$lineno"
+
+            printf -v outline '#     %s\n# %s\n#\n' "$usage" "$whatis"
+            out+=$outline
+        }
+        comments=()
+    done < ~/.bin/bashlib
+
+    outhash=$(openssl md5 <<< "$out")
+    if [[ $_tocHash = $outhash ]]; then
+        inf 'Table of contents up-to-date.'
+    else
+        printf '%s' "$out"
+        printf '_tocHash=%q' "$outhash"
+        wrn 'Table of contents outdated.'
+    fi
+}
 
 
 
@@ -54,7 +186,6 @@ spinner=(    '-' \\  '|' '/' )
 crosser=(    '+' 'x' '+' 'x' )
 runner=(     '> >'           \
              '>> '           \
-             '>>>'           \
              ' >>'           )
 
 # Variables for terminal requests.
@@ -197,8 +328,7 @@ min() {
 #
 #       exists application
 #
-# Returns successfully if the application is in PATH and is executable
-# by the current user.
+# Succeeds if the application is in PATH and is executable.
 #
 exists() {
     [[ -x $(type -P "$1" 2>/dev/null) ]]
@@ -245,7 +375,7 @@ hr() {
 #
 #       cloc
 #
-# Outputs the current cursor location as two space-separated numbers: row column
+# Outputs the current cursor location as two space-separated numbers: row column.
 #
 cloc() {
     local old=$(stty -g)
@@ -680,9 +810,7 @@ emit() {
 #  ______________________________________________________________________
 # |__ Spinner ___________________________________________________________|
 #
-#       spinner message... [-- style color textstyle textcolor]
-#           or
-#       spinner -[code]
+#       spinner [-code|message... [-- style color textstyle textcolor]]
 #
 # Displays a spinner on the screen that waits until a certain time.
 # Best used through its interface provided by 'emit'.
@@ -1074,16 +1202,16 @@ reverse() {
 
 
 #  ______________________________________________________________________
-# |__ Sort ______________________________________________________________|
+# |__ Order _____________________________________________________________|
 #
-#       sort [-0] [-c isAscending|-n] [elements ...] [<<< elements]
+#       order [-0] [-c isAscending|-n] [elements ...] [<<< elements]
 #
-# Sorts the elements in ascending order.
+# Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
 # arguments are given.
 # The result is output on standard output.
 #
-# By default, the elements will be sorted using lexicographic comparison.
+# By default, the elements will be ordered using lexicographic comparison.
 # If the -n option is given, the elements will be considered integer numbers.
 # If the -c option is given, the command name following it will be used
 # as a comparator.
@@ -1098,14 +1226,12 @@ reverse() {
 # character argument.
 # Otherwise, they are delimited by newlines.
 #
-# The sort is implemented by an insertion sort algorithm.
+# The ordering is implemented by an insertion sort algorithm.
 #
-_sort_string_ascends() { [[ $1 < $2 ]]; }
-_sort_number_ascends() { (( $1 < $2 )); }
-sort() {
+order() {
    
     # Initialize the vars.
-    local elements=() element delimitor=$'\n' i isAscending=_sort_string_ascends 
+    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends 
 
     # Parse the options.
     local OPTIND=1
@@ -1113,7 +1239,7 @@ sort() {
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
-            n) comparator=_sort_number_ascends ;;
+            n) comparator=_order_number_ascends ;;
             c) isAscending=$OPTARG ;;
         esac
     done
@@ -1140,6 +1266,8 @@ sort() {
     done
     printf "%s${delimitor:-'\0'}" "${elements[@]}"
 } # _____________________________________________________________________
+_order_string_ascends() { [[ $1 < $2 ]]; }
+_order_number_ascends() { (( $1 < $2 )); }
 
 
 
@@ -1176,8 +1304,7 @@ mutex() {
 #
 #       fsleep time
 #
-# Wait for the given amount of seconds.  The amount of seconds may be
-# fractional.
+# Wait for the given (fractional) amount of seconds.
 #
 # This implementation solves the problem portably, assuming that either
 # bash 4.x or a fractional sleep(1) is available.
@@ -1267,6 +1394,7 @@ getArgs() {
 
 
 
+#  ______________________________________________________________________
 # |__ ShowHelp __________________________________________________________|
 #
 #       showHelp name description author [option description]...
@@ -1326,19 +1454,18 @@ showHelp() {
 #  ______________________________________________________________________
 # |__ Quote _____________________________________________________________|
 #
-#       quote [-e] [argument...]
+#       shquote [-e] [argument...]
 #
-# Output a single string where all arguments are quoted
-# such that the string is safe to be passed as shell
-# command arguments as though given arguments had been
-# passed.
-#
-# When no arguments are passed; no output is generated.
+# Shell-quote the arguments to make them safe for injection into bash code.
+# 
+# The result is bash code that represents a series of words, where each
+# word is a literal string argument.  By default, quoting happens using
+# single-quotes.
 #
 #   -e      Use backslashes rather than single quotes.
 #   -d      Use double-quotes rather than single quotes (does NOT disable expansions!).
 #
-quote() {
+shquote() {
 
     # Initialize the defaults.
     local arg escape=0 sq="'\\''" dq='\"' quotedArgs=() type=single
@@ -1377,8 +1504,10 @@ quote() {
 #
 #       requote [string]
 #
-# Output a single string where the first argument is escaped
-# for safe usage as a literal in a regular expression.
+# Escape the argument string to make it safe for injection into a regex.
+#
+# The result is a regular expression that matches the literal argument
+# string.
 #
 requote() {
 
@@ -1397,8 +1526,9 @@ requote() {
 #
 #       shorten [-p pwd] path [suffix]...
 #
-# Shorten an absolute path for pretty printing by cutting
-# off PWD and replacing HOME by ~.
+# Shorten an absolute path for pretty printing.
+# Paths are shortened by replacing the homedir by ~, making it relative and
+# cutting off given suffixes from the end.
 #
 #   -p      Use the given pathname as the base for relative filenames instead of PWD.
 #   path    The path string to shorten.
@@ -1441,8 +1571,8 @@ shorten() {
     fi
 
     # Replace special paths.
-    path=${path#$pwd/}
     path=${path/#$HOME/'~'}
+    path=${path#$pwd/}
 
     # Cut off suffix.
     for suffix; do
@@ -1524,11 +1654,14 @@ xpathNodes() {
 #  ______________________________________________________________________
 # |__ HideDebug _________________________________________________________|
 #
-#       hideDebug [ on | off ]
+#       hideDebug [on|off]
 #
-# Toggle Bash's debugging mode off temporarily.  To hide Bash's debugging
-# output for a function, you should have a hideDebug on as its first line
-# and hideDebug off as its last.
+# Toggle Bash's debugging mode off temporarily.
+# To hide Bash's debugging output for a function, you should have
+#     hideDebug on
+# as its first line, and
+#     hideDebug off
+# as its last.
 #
 hideDebug() {
 
@@ -1548,8 +1681,7 @@ hideDebug() {
 #
 #       stackTrace
 #
-# Retrieve a mapping of a key from the given map or modify the given map by
-# assigning a new value for the given key if stdin is not the terminal.
+# Output the current script's function execution stack.
 #
 stackTrace() {
 
