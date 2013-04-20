@@ -1,0 +1,367 @@
+#! /usr/bin/env bash
+# ___________________________________________________________________________ #
+#                                                                             #
+#       Diagnose -- A script to diagnose network status and problems.         #
+#                                                                             #
+#                                                                             #
+#    Licensed under the Apache License, Version 2.0 (the "License");          #
+#    you may not use this file except in compliance with the License.         #
+#    You may obtain a copy of the License at                                  #
+#                                                                             #
+#        http://www.apache.org/licenses/LICENSE-2.0                           #
+#                                                                             #
+#    Unless required by applicable law or agreed to in writing, software      #
+#    distributed under the License is distributed on an "AS IS" BASIS,        #
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. #
+#    See the License for the specific language governing permissions and      #
+#    limitations under the License.                                           #
+# ___________________________________________________________________________ #
+#                                                                             #
+#                                                                             #
+# Copyright 2007, lhunath                                                     #
+#   * http://lhunath.lyndir.com                                               #
+#   * Maarten Billemont.                                                      #
+#                                                                             #
+
+
+# Arguments
+basefile=${TMPDIR:-/tmp}/.diagnose
+while getopts :bdqQvS: arg; do
+    case $arg in
+        b)  brief=1     ;;
+        d)  daemon=1    ;;
+        q)  quiet=1     ;;
+        Q)  notquiet=1  ;;
+        v)  verbose=1   ;;
+        S)  "$0" -bd &
+            cat "$basefile.$OPTARG"
+            exit        ;;
+    esac
+done
+shift "$((OPTINT+1))"
+[[ ! -t 1 ]] && (( ! notquiet )) && quiet=1
+
+
+# Functions.
+source bashlib
+testConn() {
+
+    local quiet=0
+    [[ $1 = -q ]] && {
+        quiet=1
+        shift
+    }
+
+    local probe=$1
+    local maxTime=${2:-1}
+    local iteration=0
+    local result
+    local pid
+
+    trap "printf '$show'" RETURN
+    (( quiet )) || emit -n $'\t'"[${save}   ] $probe$hide"
+
+    # Launch the probe.
+    if (( ! EUID )) && hash nmap 2>/dev/null; then
+        # When root and nmap is available, use it for probing.
+        nmap -n -sP -oG - "$probe" 2>/dev/null | grep -q 'Status: Up' & pid=$!
+
+    elif ping -oq 127.0.0.1 >/dev/null 2>&1; then
+        # If ping(1) supports -oq, assume BSD-style ping.
+        ping -doqt "$maxTime" "$probe" >/dev/null 2>/dev/null & pid=$!
+
+    else
+        # Otherwise, assume GNU-style ping.
+        ping -c1 -nqW "$maxTime" "$probe" >/dev/null 2>/dev/null & pid=$!
+
+    fi
+
+    # Wait for the probe's result.
+    while kill -0 $pid 2>/dev/null; do
+        let iteration++
+
+        (( quiet )) || \
+            printf "${load}${yellow}${runner[iteration%4]}${load}" >&2
+        sleep .2
+
+        (( iteration * 2 < maxTime * 10 )) || {
+            kill -INT $pid 2>/dev/null
+            false; break
+        } 
+    done && wait $pid
+
+    result=$?
+    (( quiet )) || {
+        printf '\r'                                              >&2
+        if (( ! result )); then
+            emit $'\t'"[ ${bold}${green}v${reset} ] $probe"      >&2
+        else
+            emit -y $'\t'"[ ${bold}${red}x${reset} ] $probe"     >&2
+        fi
+    }
+
+    return $result
+}
+
+testDNS() {
+
+    local quiet=0
+    [[ $1 = -q ]] && {
+        quiet=1
+        shift
+    }
+
+    local probe=$1
+    local maxTime=${2:-2}
+    local iteration=0
+    local result
+    local pid
+
+    trap 'printf %s "$show"' RETURN
+    (( quiet )) || emit -n $'\t'"[${save}   ] $probe$hide"
+
+    # Launch the probe.
+    host "$probe" >/dev/null 2>&1 & pid=$!
+
+    # Wait for the probe's result.
+    while kill -0 $pid 2>/dev/null; do
+        let iteration++
+
+        (( quiet )) || \
+            printf "${load}${yellow}${runner[iteration%4]}${load}"  >&2
+        sleep .2
+
+        (( iteration * 2 < maxTime * 10 )) || {
+            kill -INT $pid 2>/dev/null
+            false; break
+        } 
+    done && wait $pid
+
+    result=$?
+    (( quiet )) || {
+        printf $'\r'                                                >&2
+        if (( ! result )); then
+            emit $'\t'"[ ${bold}${green}v${reset} ] $probe"         >&2
+        else
+            emit -y $'\t'"[ ${bold}${red}x${reset} ] $probe"        >&2
+        fi
+    }
+
+    return $result
+}
+
+traceConn() {
+
+    local quiet=0
+    [[ $1 = -q ]] && {
+        quiet=1
+        shift
+    }
+
+    local probe=$1
+    local node=0
+    local ip
+    local goodIp=localhost
+    local time
+    local ms
+    local error
+
+    (( quiet )) || emit -n $'\t'"Node: "
+    while printf "${bold}$((node+1))${reset}.."             >&2
+            read node ip time ms error; do
+        printf "${back}${back}${back}"                      >&2
+
+        if [[ $error || $ip = '*' ]]; then
+            printf "$reset$red$node.. ${bold}%s$reset.\r"   \
+                    "broken"                                >&2
+            emit -ny $'\n'
+            echo "$node $ip $goodIp"
+            return $node
+        else
+            goodIp=$ip
+            printf "$reset$green$node.."                    >&2
+        fi
+    done < <(traceroute -nw2 -q1 "$probe" 2>/dev/null)
+
+    echo " $green${bold}reachable$reset."                   >&2
+    printf '\r'                                             >&2
+    emit -y ''
+}
+
+
+# Configuration.
+(( daemon )) && { mutex "$basefile.lock" || exit 100; }
+if (( $# )); then
+    probeHostAddrs=( "$@" )
+    probeHostNames=( "$@" )
+else
+    probeHostAddrs=(
+        8.8.8.8 # Google DNS
+        8.8.4.4 # Google DNS
+        64.95.64.190 # OpenDNS
+        192.0.43.7 # ICANN
+    )
+    probeHostNames=(
+        google.com
+        opendns.net
+        icann.org
+    )
+fi
+
+
+# Daemon support.
+while true; do
+    (( daemon )) && exec >"$basefile.new"
+    (( brief )) && exec 3>&1 >/dev/null 2>&1 || exec 3>/dev/null
+    (( quiet )) && exec >/dev/null 2>&1
+
+    # Find gateway.
+    gateway=$(route -n get default 2>/dev/null > >(awk '/gateway:/ {print $2}')) || \
+    gateway=$(route print 0.0.0.0  2>/dev/null > >(awk '/^0.0.0.0/ {print $3}')) || \
+    gateway=$(route -n 2>/dev/null > >(awk '/^0.0.0.0/ {print $2}'))
+
+
+    # Determine network status.
+    networkGatewaySet=0
+    networkGatewayReachable=0
+    networkSomeProbesReachable=0
+    networkAllProbesReachable=0
+    networkProbesResolvable=0
+
+    if [[ $gateway ]]; then
+        networkGatewaySet=1
+
+        if (( verbose )); then
+            emit "Default gateway           :  $gateway"
+            emit "Connectivity probes       :  ${probeHostAddrs[*]}"
+            emit "Name resolution probes    :  ${probeHostNames[*]}"
+            echo
+        fi
+
+        emit "Checking gateway"
+        if testConn "$gateway"; then
+            networkGatewayReachable=1
+
+            if ! (( ${#probeHostAddrs[@]} )); then
+
+                emit -r "No testing probes were defined.  Configure this script properly."
+                printf "$reset[$bold ${red}? $reset]" >&3
+                exit 2
+
+            fi
+
+            emit "Checking connectivity"
+            networkAllProbesReachable=1
+            for probeHostAddr in "${probeHostAddrs[@]}"; do
+                if testConn "$probeHostAddr"; then
+                    networkSomeProbesReachable=1
+                else
+                    networkAllProbesReachable=0
+                fi
+            done
+            if (( networkSomeProbesReachable )); then
+
+                emit "Checking name resolution"
+                if for probeHostName in "${probeHostNames[@]}"; do
+                        testDNS "$probeHostName" && break
+                    done; then
+
+                    networkProbesResolvable=1
+
+                fi
+            fi
+        fi
+    fi
+    (( up = ( networkAllProbesReachable && networkProbesResolvable ) ))
+
+
+    # Report network status.
+    if (( ! quiet )); then
+
+        if (( ! networkGatewaySet )); then
+
+            emit -r "Cause                     :  No default route set."
+            emit -r "Fix                       :  Enable your local network connection or fix / wait for your DHCP."
+
+        elif (( ! networkGatewayReachable )); then
+
+            emit -r "Cause                     :  Default gateway unreachable."
+            emit -r "Fix                       :  Investigate your line to the gateway or the gateway's local connectivity."
+
+        elif (( ! networkSomeProbesReachable )); then
+
+            emit -r "Cause                     :  Network probes unreachable."
+            emit    "Tracing down broken node"
+            emit -n $'\t'"Node: "
+
+            read badNode badIp goodIp < <(traceConn "${probeHostAddr[0]}")
+            if (( badNode )); then
+
+                emit -r "Cause                     :  Node $badNode (gateway of '$goodIp') is broken."
+                emit -r "Fix                       :  Investigate the line from '$goodIp' to or the connectivity of their gateway toward '${probeHosts[0]}'."
+
+            else
+                
+                networkSomeProbesReachable=1
+                emit -y "Cause                     :  Problem disappeared while investigating."
+                emit -y "Fix                       :  Try diagnosing again."
+
+            fi
+
+        elif (( ! networkAllProbesReachable )); then
+
+            emit -r "Cause                     :  Some network probes were unreachable."
+            emit -r "Fix                       :  Trace the route to the broken probes to determine which internet router is having issues."
+
+        elif (( ! networkProbesResolvable )); then
+
+            emit -r "Cause                     :  Network probes unresolvable."
+            emit -r "Fix                       :  Investigate your DNS configuration or DNS provider connectivity."
+
+        else
+
+            emit "No network problems detected."
+
+        fi
+
+    fi
+
+    if (( ! networkGatewaySet )); then
+        printf "$reset[$bold${red}!  $reset]" >&3
+
+    elif (( ! networkGatewayReachable )); then
+        printf "$reset[$bold${red}x  $reset]" >&3
+
+    elif (( ! networkAllProbesReachable )); then
+        if (( badNode )); then
+            printf "$reset[$bold-${red}$badNode $reset]" >&3
+        else
+            printf "$reset[$bold-${red}x $reset]" >&3
+        fi
+
+    elif (( ! networkProbesResolvable )); then
+        printf "$reset[$bold-${red}n $reset]" >&3
+
+    else
+        printf "$reset[$bold${green}===$reset]" >&3
+
+    fi
+
+    # Daemon support.
+    if (( daemon )); then
+        if (( up )); then
+            ln -sf "$basefile" "$basefile.up"
+            ln -sf /dev/null "$basefile.down"
+        else
+            ln -sf "$basefile" "$basefile.down"
+            ln -sf /dev/null "$basefile.up"
+        fi
+        mv "$basefile.new" "$basefile"
+    else
+        break
+    fi
+
+    sleep 1
+done
+
+(( up ))

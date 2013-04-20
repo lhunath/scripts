@@ -78,9 +78,15 @@ I've had a really hard time finding a quality product that did this for me in a 
 - Useful reporting
 - Useful client utilities to interact with the daemon
 
+## [diagnose](https://github.com/lhunath/scripts/tree/master/bash/diagnose)
+
+`diagnose` is a tool for checking what's going on with your connectivity to the Internet.
+
+"Internet connectivity" is a very vague term and generally means "I can connect to stuff over the public network".  This tool checks if you can reach a bunch of popular servers and if issues are detected tries some simple tests to diagnose possible causes.
+
 ### Usage
 
-Copy `tunmgrd.conf.sample` to `~/.tunmgrd.conf`, modify as desired and run `tunmgrd`.
+Run `diagnose` and look at what it tells you.  If breakage is detected, it will generally issue some mildly useful advice.
 
 ## [parseJSON](https://github.com/lhunath/scripts/tree/master/bash/parseJSON)
 
