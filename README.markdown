@@ -1,6 +1,6 @@
 This repo holds some generally useful scripts I've written.  If any of these turn out useful to you, buy some beer in celebration and drink it to my health and good fortune.
 
-## [bashlib](/lhunath/scripts/tree/master/bash/bashlib)
+## [bashlib](https://github.com/lhunath/scripts/tree/master/bash/bashlib)
 `bashlib` is a library of convenience functions for the GNU Bash shell.
 
 Bash is the POSIX-compliant shell you find on most any UNIX system. This library makes it a little easier to make sane and appealing bash scripts.
@@ -25,7 +25,7 @@ Then your scripts can use it by doing a `source` without specifying the location
 See the comments in the file for information about what the functions do and how to use them.
 
 
-## [timetravel](/lhunath/scripts/tree/master/bash/timetravel)
+## [timetravel](https://github.com/lhunath/scripts/tree/master/bash/bashlib)
 `timetravel` is a command-line tool for accessing the files in your Time Machine backups.
 
 Time Machine is an OS X technology for performing continuous backups of your files to local or remote disks.  Since OS X 10.7 (Lion), Time Machine makes local backups of all your files.  This means you have snapshot versions of all your files at different times in the past.  If you are running Lion right now, you already have these snapshots.
@@ -53,7 +53,7 @@ When showing the contents of directories, their files are enumerated.  When show
 
 When no host, time or disk is specified (using `-H`, `-T` or `-D`), `timetravel` will use default values for them.  The host will default to the name of your computer, the time will default to `Latest` and the disk will default to `Macintosh HD`.  When using `timetravel` to list snapshots (the `-l` option), these will default to empty values instead.  Note that when listing snapshots, these values are actually search prefixes.  If, for example, you use `-T 2012-06`, all snapshots in June 2012 will be searched.  Empty values will cause all snapshots of that type to be searched.
 
-## [mvn-tools](/lhunath/scripts/tree/master/bash/mvn-tools)
+## [mvn-tools](https://github.com/lhunath/scripts/tree/master/bash/mvn-tools)
 
 `mvn-tools` is a collection of utilities for working with maven repositories and
 java web application distributions.
@@ -66,7 +66,7 @@ java web application distributions.
 - mvn-tools: Installer / common library for the framework.
 - mvn-web: Used to manage live extracted files from JBoss to a safe location where you can easily edit and see live changes.  Also allows you to apply your edits to these files back onto your repository.
 
-## [tunmgrd](/lhunath/scripts/tree/master/bash/tunmgrd)
+## [tunmgrd](https://github.com/lhunath/scripts/tree/master/bash/tunmgrd)
 
 `tunmgrd` is a daemon that you use to bring up and keep up SSH connections.  Great for setting and keeping up tunnels, port forwards and master connections.
 
@@ -82,7 +82,7 @@ I've had a really hard time finding a quality product that did this for me in a 
 
 Copy `tunmgrd.conf.sample` to `~/.tunmgrd.conf`, modify as desired and run `tunmgrd`.
 
-## [parseJSON](/lhunath/scripts/tree/master/bash/parseJSON)
+## [parseJSON](https://github.com/lhunath/scripts/tree/master/bash/parseJSON)
 
 `parseJSON` is a filter used to convert JSON data into a structure much more friendly to parsing from bash scripts.
 
