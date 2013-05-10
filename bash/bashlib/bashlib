@@ -90,7 +90,7 @@
 #     reverse [-0|-d delimitor] [elements ...] [<<< elements]
 # Reverse the order of the given elements.
 #
-#     order [-0] [-c isAscending|-n] [elements ...] [<<< elements]
+#     order [-0] [-[cC] isAscending|-n] [elements ...] [<<< elements]
 # Orders the elements in ascending order.
 #
 #     mutex file
@@ -126,7 +126,7 @@
 #     stackTrace
 # Output the current script's function execution stack.
 #
-_tocHash=690a2401636ee44fdf3c0eee8178eef0
+_tocHash=cda4fc61e3a7a177597580ed6eab22a9
 
 
 
@@ -1204,7 +1204,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0] [-c isAscending|-n] [elements ...] [<<< elements]
+#       order [-0] [-[cC] isAscending|-n] [elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -1214,6 +1214,8 @@ reverse() {
 # By default, the elements will be ordered using lexicographic comparison.
 # If the -n option is given, the elements will be considered integer numbers.
 # If the -c option is given, the command name following it will be used
+# as a comparator.
+# If the -C option is given, the bash code following it will be used
 # as a comparator.
 #
 # If given, isAscending comparator command will be executed for each element
@@ -1235,12 +1237,13 @@ order() {
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nd:c: opt; do
+    while getopts :0nd:c:C: opt; do
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
             n) comparator=_order_number_ascends ;;
             c) isAscending=$OPTARG ;;
+            C) isAscending=_order_cmd_ascends _order_cmd=$OPTARG ;;
         esac
     done
     shift "$((OPTIND-1))"
@@ -1268,7 +1271,7 @@ order() {
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
-
+_order_cmd_ascends()    { bash -c "$_order_cmd" -- "$@"; }
 
 
 #  ______________________________________________________________________
