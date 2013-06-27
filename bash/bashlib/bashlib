@@ -196,6 +196,7 @@ runner=(     '> >'           \
     show=$(     tput cnorm  || tput ve      ) # Show cursor
     save=$(     tput sc                     ) # Save cursor
     load=$(     tput rc                     ) # Load cursor
+    dim=$(      tput dim    || tput mh      ) # Start dim
     bold=$(     tput bold   || tput md      ) # Start bold
     stout=$(    tput smso   || tput so      ) # Start stand-out
     estout=$(   tput rmso   || tput se      ) # End stand-out
@@ -213,6 +214,7 @@ runner=(     '> >'           \
     magenta=$(  tput setaf 5|| tput AF 5    )
     cyan=$(     tput setaf 6|| tput AF 6    )
 }
+    black=$(    tput setaf 0|| tput AF 0    )
     white=$(    tput setaf 7|| tput AF 7    )
     default=$(  tput op                     )
     eed=$(      tput ed     || tput cd      )   # Erase to end of display
@@ -319,6 +321,33 @@ min() {
   for n
   do (( n < min )) && min=$n; done
   printf %d "$min"
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
+# |__ totime ____________________________________________________________|
+#
+#       totime "YYYY-MM-DD HH:MM:SS.mmm"...
+#
+# Outputs the number of milliseconds in the given date string(s).
+#
+# When multiple date string arguments are given, multiple time strings are output, one per line.
+#
+# The fields should be in the above defined order.  The delimitor between the fields may be any one of [ -:.].
+# If a date string does not follow the defined format, the result is undefined.
+#
+# Note that this function uses a very simplistic conversion formula which does not take any special calendar
+# convenions into account.  It assumes there are 12 months in evert year, 31 days in every month, 24 hours
+# in every day, 60 minutes in every hour, 60 seconds in every minute and 1000 milliseconds in every second.
+#
+totime() {
+  local arg time year month day hour minute second milli
+  for arg; do
+    IFS=' -:.' read year month day hour minute second milli <<< "$arg" &&
+        (( time = (((((((((((10#$year * 12) + 10#$month) * 31) + 10#$day) * 24) + 10#$hour) * 60) + 10#$minute) * 60) + 10#$second) * 1000) + 10#$milli )) &&
+        printf '%d\n' "$time"
+    done
 } # _____________________________________________________________________
 
 
@@ -548,24 +577,28 @@ log() {
     done
     shift "$((OPTIND-1))"
     format=$1 args=( "${@:2}" )
+    (( ${#args[@]} )) || { args=("$format") format=%s; local bold=; }
 
     # Level-specific settings.
     case $level in
+        TRC)    (( supported = _logVerbosity >= 4 ))
+                logLevelColor=$_logTrcColor ;;
         DBG)    (( supported = _logVerbosity >= 3 ))
-                color=$_logDbgColor ;;
+                logLevelColor=$_logDbgColor ;;
         INF)    (( supported = _logVerbosity >= 2 ))
-                color=$_logInfColor ;;
+                logLevelColor=$_logInfColor ;;
         WRN)    (( supported = _logVerbosity >= 1 ))
-                color=$_logWrnColor ;;
+                logLevelColor=$_logWrnColor ;;
         ERR)    (( supported = _logVerbosity >= 0 ))
-                color=$_logErrColor ;;
+                logLevelColor=$_logErrColor ;;
         FTL)    (( supported = 1 ))
-                color=$_logFtlColor ;;
+                logLevelColor=$_logFtlColor ;;
         *)
                 log FTL "Log level %s does not exist" "$level"
                 exit 1 ;;
     esac
     (( ! supported )) && return "$exitcode"
+    local logColor=${logColor:-$logLevelColor}
 
     # Generate the log message.
     date=$(date +"${_logDate:-%H:%M}")
@@ -573,9 +606,9 @@ log() {
         msg|startProgress)
             printf -v logMsg "[%s %-3s] $format$end" "$date" "$level" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$color/g" -e "s/%[^a-z]*[a-z]/$reset$bold$color&$reset$color/g" <<< "$format")
-                colorArgs=("${args[@]//$reset/$reset$bold$color}")
-                printf -v conMsg "[%s %-3s] $color$colorFormat$reset$end$save" "$date" "$level" "${colorArgs[@]}"
+                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
+                printf -v conMsg "$reset[%s $logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -584,9 +617,9 @@ log() {
         updateProgress)
             printf -v logMsg printf " [$format]" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$color/g" -e "s/%[^a-z]*[a-z]/$reset$bold$color&$reset$color/g" <<< "$format")
-                colorArgs=("${args[@]//$reset/$reset$bold$color}")
-                printf -v conMsg "$load$eel$blue$bold[$reset$color$colorFormat$reset$blue$bold]$reset$end" "${colorArgs[@]}"
+                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
+                printf -v conMsg "$load$eel$blue$bold[$reset$logColor$colorFormat$reset$blue$bold]$reset$end" "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -596,9 +629,9 @@ log() {
             case $exitcode in
                 0)  printf -v logMsg "done${format:+ ($format)}.\n" "${args[@]}"
                     if (( _logColor )); then
-                        colorFormat=$(sed -e "s/$(requote "$reset")/$reset$color/g" -e "s/%[^a-z]*[a-z]/$reset$bold$color&$reset$color/g" <<< "$format")
-                        colorArgs=("${args[@]//$reset/$reset$bold$color}")
-                        printf -v conMsg "$load$eel$green${bold}done${colorFormat:+ ($reset$color$colorFormat$reset$green$bold)}$reset.\n" "${colorArgs[@]}"
+                        colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                        colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
+                        printf -v conMsg "$load$eel$green${bold}done${colorFormat:+ ($reset$logColor$colorFormat$reset$green$bold)}$reset.\n" "${colorArgs[@]}"
                     else
                         conMsg=$logMsg
                     fi
@@ -654,6 +687,7 @@ log() {
 
     return $exitcode
 }
+trc() { level=TRC log "$@"; }
 dbg() { level=DBG log "$@"; }
 inf() { level=INF log "$@"; }
 wrn() { level=WRN log "$@"; }
@@ -662,23 +696,26 @@ ftl() { level=FTL log "$@"; }
 plog() { log -p "$@"; }
 ulog() { log -u "$@"; }
 golp() { log -P "$@"; }
+ptrc() { level=TRC plog "$@"; }
 pdbg() { level=DBG plog "$@"; }
 pinf() { level=INF plog "$@"; }
 pwrn() { level=WRN plog "$@"; }
 perr() { level=ERR plog "$@"; }
 pftl() { level=FTL plog "$@"; }
+utrc() { level=TRC ulog "$@"; }
 udbg() { level=DBG ulog "$@"; }
 uinf() { level=INF ulog "$@"; }
 uwrn() { level=WRN ulog "$@"; }
 uerr() { level=ERR ulog "$@"; }
 uftl() { level=FTL ulog "$@"; }
+gtrc() { level=trc golp "$@"; }
 gbdp() { level=DBG golp "$@"; }
 fnip() { level=INF golp "$@"; }
 nrwp() { level=WRN golp "$@"; }
 rrep() { level=ERR golp "$@"; }
 ltfp() { level=FTL golp "$@"; }
 _logColor=${_logColor:-$([[ -t 2 ]] && echo 1)} _logVerbosity=2
-_logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _logErrColor=$red _logFtlColor=$bold$red
+_logTrcColor=$grey _logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _logErrColor=$red _logFtlColor=$bold$red
 # _______________________________________________________________________
 
 
@@ -1586,6 +1623,37 @@ shorten() {
     done
 
     printf "%s" "$path"
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
+# |__ BuildArray ___________________________________________________________|
+#
+#       buildarray name terms... -- elements...
+#
+# Create an array by adding all the terms to it for each element, replacing {} terms by the element.
+#
+#   name        The name of the array to put the result into.
+#   terms       The values to add to the array for each of the elements.  A {} term is replaced by the current element.
+#   elements    The elements to iterate the terms for.
+#
+buildarray() {
+    local target=$1 term terms=() element value
+    shift
+
+    while [[ $1 != -- ]]; do
+        terms+=("$1")
+        shift
+    done
+    shift
+
+    for element; do
+        for term in "${terms[@]}"; do
+            [[ $term = {} ]] && value="$element" || value="$term"
+            declare -ag "$target+=($(printf '%q' "$value"))"
+        done
+    done
 } # _____________________________________________________________________
 
 
