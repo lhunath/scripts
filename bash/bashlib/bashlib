@@ -1304,7 +1304,7 @@ order() {
             fi
         done
     done
-    printf "%s${delimitor:-'\0'}" "${elements[@]}"
+    printf "%s${delimitor:-\0}" "${elements[@]}"
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
