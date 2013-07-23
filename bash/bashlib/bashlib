@@ -1308,6 +1308,7 @@ order() {
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
+_order_mtime_ascends() { [[ $1 -ot $2 ]]; }
 _order_cmd_ascends()    { bash -c "$_order_cmd" -- "$@"; }
 
 
