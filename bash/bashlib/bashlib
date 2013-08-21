@@ -1325,17 +1325,10 @@ _order_cmd_ascends()    { bash -c "$_order_cmd" -- "$@"; }
 # exec 9>&-
 #
 mutex() {
-    local file=${1:-${BASH_SOURCE[-1]}} pid pids
-    [[ -e $file ]] || err "No such file: $file" || return
+    local lockfile=${1:-${BASH_SOURCE[-1]}} pid pids
+    [[ -e $lockfile ]] || err "No such file: $lockfile" || return
 
-    exec 9>>"$file"
-    { pids=$(fuser -f "$file"); } 2>&- 9>&-
-    for pid in $pids; do
-        [[ $pid = $$ ]] && continue
-
-        exec 9>&-
-        return 1 # Locked by a pid.
-    done
+    exec 9>> "$lockfile" && [[ $({ fuser -f "$lockfile"; } 2>&- 9>&-) == $$ ]]
 }
 
 
