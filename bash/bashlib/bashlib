@@ -1353,17 +1353,29 @@ mutex() {
 # automatically starting the next command as soon as there's space.
 #
 pushjob() {
+    local size=$1; shift 1
+
+    # Wait for space in the pool.
+    until (( ${#jobpool[@]} < size )); do
+        sleep 1 & pushjobsleep=$!
+        wait "$pushjobsleep"
+    done 2>/dev/null
+
+    # Register prunejobs and start the pushed job.
     trap _prunejobs SIGCHLD
     set -m
-
-    local size=$1; shift 1
-    until (( ${#jobpool[@]} < size )); do sleep 1; done
     "$@" & jobpool[$!]=
 }
 _prunejobs() {
+    # Prune all pool jobs that are no longer running.
     for pid in "${!jobpool[@]}"; do
-        kill -0 "$pid" 2>/dev/null || { unset "jobpool[$pid]"; echo "pruned job $pid"; }
+        kill -0 "$pid" 2>/dev/null || unset "jobpool[$pid]"
     done
+
+    # Wake up pushjob.
+    kill "$pushjobsleep" 2>/dev/null
+    # Unregister SIGCHLD if our pool is empty.
+    (( ${#jobpool[@]} )) || trap - SIGCHLD
 }
 
 
