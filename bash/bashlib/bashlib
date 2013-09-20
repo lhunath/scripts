@@ -1372,10 +1372,11 @@ _prunejobs() {
         kill -0 "$pid" 2>/dev/null || unset "jobpool[$pid]"
     done
 
-    # Wake up pushjob.
-    kill "$pushjobsleep" 2>/dev/null
     # Unregister SIGCHLD if our pool is empty.
     (( ${#jobpool[@]} )) || trap - SIGCHLD
+
+    # Wake up pushjob.
+    kill "$pushjobsleep" 2>/dev/null
 }
 
 
