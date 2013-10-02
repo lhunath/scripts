@@ -1671,6 +1671,33 @@ shorten() {
 
 
 #  ______________________________________________________________________
+# |__ Up ________________________________________________________________|
+#
+#       up .../path|num
+#
+# Change the current working directory up by num directories or until path
+# exists in it.
+#
+# Returns 0 if the destination was reached or 1 if we hit root.
+#
+# Prints PWD on stdout on success.
+#
+up() {
+    local up=0
+    until [[ $PWD = / ]]; do
+        cd ../
+
+        if [[ $1 = .../* ]]; then
+            [[ -e ${1#.../} ]] && pwd && return
+        elif (( ++up == $1 )); then
+            pwd && return
+        fi
+    done
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
 # |__ BuildArray ___________________________________________________________|
 #
 #       buildarray name terms... -- elements...
