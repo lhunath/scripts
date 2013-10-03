@@ -1872,7 +1872,7 @@ stackTrace() {
 # |______________________________________________________________________|
 
 # Make sure this file is sourced and not executed.
-(( ! BASH_LINENO )) && {
+(return 2>/dev/null) || {
     emit -R "You should source this file, not execute it."
     exit 1
 }
