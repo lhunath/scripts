@@ -93,7 +93,7 @@
 #     reverse [-0|-d delimitor] [elements ...] [<<< elements]
 # Reverse the order of the given elements.
 #
-#     order [-0|-d char] [-[cC] isAscending|-n] [elements ...] [<<< elements]
+#     order [-0|-d char] [-[cC] isAscending|-n] [-t number] [elements ...] [<<< elements]
 # Orders the elements in ascending order.
 #
 #     mutex file
@@ -120,6 +120,9 @@
 #     shorten [-p pwd] path [suffix]...
 # Shorten an absolute path for pretty printing.
 #
+#     up .../path|num
+# Walk the current working directory up towards root num times or until path is found.
+#
 #     buildarray name terms... -- elements...
 # Create an array by adding all the terms to it for each element, replacing {} terms by the element.
 #
@@ -135,7 +138,7 @@
 #     stackTrace
 # Output the current script's function execution stack.
 #
-_tocHash=a883c829159b9f083ac81b26bde4ba19
+_tocHash=71e13f42e1ea82c1c7019b27a3bc71f3
 
 
 #  ______________________________________________________________________ 
@@ -1680,8 +1683,7 @@ shorten() {
 #
 #       up .../path|num
 #
-# Change the current working directory up by num directories or until path
-# exists in it.
+# Walk the current working directory up towards root num times or until path is found.
 #
 # Returns 0 if the destination was reached or 1 if we hit root.
 #
@@ -1703,7 +1705,7 @@ up() {
 
 
 #  ______________________________________________________________________
-# |__ BuildArray ___________________________________________________________|
+# |__ BuildArray ________________________________________________________|
 #
 #       buildarray name terms... -- elements...
 #
