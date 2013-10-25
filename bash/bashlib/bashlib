@@ -1250,7 +1250,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0|-d char] [-[cC] isAscending|-n] [elements ...] [<<< elements]
+#       order [-0|-d char] [-[cC] isAscending|-n] [-t number] [elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -1263,6 +1263,8 @@ reverse() {
 # as a comparator.
 # If the -C option is given, the bash code following it will be used
 # as a comparator.
+# If the -t option is given, only the first number results are returned.
+# If number is 0, all results are returned.
 #
 # If given, isAscending comparator command will be executed for each element
 # comparison and will be passed two element arguments.  The command should
@@ -1279,17 +1281,18 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends 
+    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends top=0
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nd:c:C: opt; do
+    while getopts :0nd:c:C:t: opt; do
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
             n) comparator=_order_number_ascends ;;
             c) isAscending=$OPTARG ;;
             C) isAscending=_order_cmd_ascends _order_cmd=$OPTARG ;;
+            t) top=$OPTARG ;;
         esac
     done
     shift "$((OPTIND-1))"
@@ -1313,7 +1316,9 @@ order() {
             fi
         done
     done
-    printf "%s${delimitor:-\0}" "${elements[@]}"
+
+    (( top )) || top=${#elements[@]}
+    printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
@@ -1872,7 +1877,7 @@ stackTrace() {
 # |______________________________________________________________________|
 
 # Make sure this file is sourced and not executed.
-(return 2>/dev/null) || {
+( return 2>/dev/null ) || {
     emit -R "You should source this file, not execute it."
     exit 1
 }
