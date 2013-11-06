@@ -567,6 +567,20 @@ iterate() (
 # Log an event at a certain importance level.  The event is expressed as a printf(1) format argument.
 # The current exit code remains unaffected by the execution of this function.
 #
+# Instead of 'log', you can use a level as command name, to log at that level.  Using log, messages are
+# logged at level inf.  The supported levels are: trc, dbg, inf, wrn, err, ftl.
+#
+# If you prefix the command name with a p, the log message is shown as a spinner and waits for the next
+# closing statement.  Eg.
+#   
+#   pinf 'Converting image'
+#       convert image.png image.jpg
+#   fnip
+#
+# The closing statement (here fnip) is the reverse of the opening statement and exits with the exit code
+# of the last command.  If the last command failed, it shows the exit code in the spinner before it is stopped.
+# The closing statement also takes a format and arguments, which are displayed in the spinner.
+#
 log() {
     local exitcode=$? level=${level:-inf} supported=0 end=$'\n' type=msg conMsg= logMsg= format= colorFormat= date= info= arg= args=() colorArgs=() ruler=
 
@@ -588,7 +602,7 @@ log() {
     done
     shift "$((OPTIND-1))"
     format=$1 args=( "${@:2}" )
-    (( ${#args[@]} )) || { args=("$format") format=%s; local bold=; }
+    (( ! ${#args[@]} )) && [[ $format ]] && { args=("$format") format=%s; local bold=; }
 
     # Level-specific settings.
     case $level in
@@ -689,7 +703,8 @@ log() {
     if [[ $type = startProgress && ! $_logSpinner ]]; then
         {
             set +m
-            trap 'printf %s "$show"' EXIT
+            trap 'touch exit; printf %s "$show"' EXIT
+            echo "$BASHPID" > start
             printf %s "$hide"
             while printf "$eel$blue$bold[$reset%s$reset$blue$bold]$reset\b\b\b" "${spinner[s++ % ${#spinner[@]}]}" && sleep .1
             do :; done
@@ -737,6 +752,8 @@ _logTrcColor=$grey _logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _
 #       emit [options] message... [-- [command args...]]
 #
 # Display a message with contextual coloring.
+#
+# DEPRECATED: Use inf and variants instead.
 #
 # When a command is provided, a spinner will be activated in front of the
 # message for as long as the command runs.  When the command ends, its
@@ -859,6 +876,8 @@ emit() {
 # |__ Spinner ___________________________________________________________|
 #
 #       spinner [-code|message... [-- style color textstyle textcolor]]
+#
+# DEPRECATED: Use pinf and variants instead.
 #
 # Displays a spinner on the screen that waits until a certain time.
 # Best used through its interface provided by 'emit'.
@@ -1013,6 +1032,8 @@ spinner() {
 #
 # This is a convenience function for replacement of spinner -code.
 #
+# DEPRECATED: Use fnip and variants instead.
+#
 # It checks either the exit code of the previously completed command or
 # the code provided as option to determine whether to display the success
 # or failure message.  It calls spinner -code to complete an actively
@@ -1107,6 +1128,7 @@ ask() {
     local silent=
     local valid=
     local muteChar=
+    local message=
 
     # Parse the options.
     local OPTIND=1
@@ -1133,7 +1155,8 @@ ask() {
     [[ -t 1 ]] && local fd=1 || local fd=2
 
     # Ask the question.
-    emit -yn "$*${option:+ [$option]}${options:+ [$options]} "
+    message=$1; shift; printf -v message "$message" "$@"
+    emit -yn "$message${option:+ [$option]}${options:+ [$options]} "
 
     # Read the reply.
     exec 8<&0; [[ -t 8 ]] || exec 8</dev/tty
@@ -1767,39 +1790,6 @@ inArray() {
 
 
 #  ______________________________________________________________________
-# |__ xpathNodes ________________________________________________________|
-#
-#       xpathNodes query [files...]
-#
-# Outputs every xpath node that matches the query on a separate line.
-# Leading and trailing whitespace is always stripped.
-#
-#   file        The path to the file that contains the document to run the query on.
-#   query       The XPath query to run on the document.
-#
-xpathNodes() {
-    local query=$1; shift
-    [[ $1 ]] || set -- <(cat)
-
-    for file; do
-        {
-            if xpath -e / <(echo '<a></a>') >/dev/null 2>&1; then
-                xpath -e "$query" "$file" 2>&1
-            else
-                xpath "$file" "$query" 2>&1
-            fi
-        } | {
-            read
-            sed -ne $'s/-- NODE --/\\\n/g' -e 's/^[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*$/\1/p'
-        }
-    done
-
-    return "${PIPESTATUS[0]}"
-}
-
-
-
-#  ______________________________________________________________________
 # |__ HideDebug _________________________________________________________|
 #
 #       hideDebug [on|off]
@@ -1823,6 +1813,75 @@ hideDebug() {
         set -x
     fi
 }
+
+
+
+#  ______________________________________________________________________
+# |__ anfunc ____________________________________________________________|
+#
+#       anfunc [on|off]
+#
+# Turn on or off support for annonymous functions.
+#
+# WARNING: This is a hack.  It turns on extdebug and causes any argument
+# that matches (){code} to be replaced by a function name that if invoked
+# runs code.
+#
+# eg.
+#   confirm '(){ rm "$1" }' *.txt
+#   # In this example, confirm() could be a function that asks confirmation
+#   # for each argument past the first and runs the anfunc in the first
+#   # argument on each confirmed argument.
+#
+# Don't use this.  It is an academic experiment and has bugs.
+#
+# Bugs:
+#   - commands lose their exit code.
+#       To inhibit the real command from running, we use extdebug and
+#       a DEBUG trap that returns non-0.  As a result, the actual return
+#       code is lost.
+# 
+anfunc() {
+    case "$1" in
+        on)
+            shopt -s extdebug
+            trap _anfunc_trap DEBUG
+        ;;
+        off)
+            trap - DEBUG
+            shopt -u extdebug
+        ;;
+    esac
+}
+_anfunc_trap() {
+    local f w
+
+    # Perform the command parsing and handling up to its word splitting.
+    # This includes command substitution, quote handling, pathname expansion, etc.
+    declare -a words="($BASH_COMMAND)"
+
+    # Iterate the words to run in the final stage, and handle anfunc matches.
+    for ((w=0; w<${#words[@]}; ++w)); do
+        [[ ${words[w]} = '(){'*'}' ]] &&
+            # Declare a new function for this anfunc.
+            eval "_f$((++f))${words[w]}" &&
+                # Replace the word by the new function's name.
+                words[w]="_f$f"
+    done
+    
+    # Run the command.
+    eval "$(printf '%q ' "${words[@]}")"
+    
+    # Clean up the anfuncs.
+    for ((; f>0; --f)); do
+        unset -f "_f$f"
+    done
+    
+    # Inhibit the real command's execution.
+    return 1
+}
+
+
 
 #  ______________________________________________________________________
 # |__ StackTrace ________________________________________________________|
