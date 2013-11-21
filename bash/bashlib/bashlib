@@ -1276,7 +1276,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0|-d char] [-[cC] isAscending|-n] [-t number] [elements ...] [<<< elements]
+#       order [-0|-d char] [-[cC] isAscending|-n] [-t number] [-a array|elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -1290,6 +1290,8 @@ reverse() {
 # If the -C option is given, the bash code following it will be used
 # as a comparator.
 # If the -t option is given, only the first number results are returned.
+# If the -a option is given, the elements in array are ordered instead and
+# array is mutated to contain the result.
 # If number is 0, all results are returned.
 #
 # If given, isAscending comparator command will be executed for each element
@@ -1307,11 +1309,11 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends top=0
+    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends top=0 array= arrayElements=
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nd:c:C:t: opt; do
+    while getopts :0nd:c:C:t:a: opt; do
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
@@ -1319,12 +1321,15 @@ order() {
             c) isAscending=$OPTARG ;;
             C) isAscending=_order_cmd_ascends _order_cmd=$OPTARG ;;
             t) top=$OPTARG ;;
+            a) array=$OPTARG arrayElements=$array[@] ;;
         esac
     done
     shift "$((OPTIND-1))"
 
     # Get the elements.
-    if (( $# )); then
+    if [[ $array ]]; then
+        elements=( "${!arrayElements}" )
+    elif (( $# )); then
         elements=( "$@" )
     else
         while IFS= read -r -d "$delimitor"; do
@@ -1344,7 +1349,11 @@ order() {
     done
 
     (( top )) || top=${#elements[@]}
-    printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
+    if [[ $array ]]; then
+        declare -ga "$array=($(printf '%q ' "${elements[@]:0:top}"))"
+    else
+        printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
+    fi
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
