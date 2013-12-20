@@ -631,7 +631,7 @@ log() {
         msg|startProgress)
             printf -v logMsg "[%s %-3s] $format$end" "$date" "$level" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorFormat=$(sed -e ${reset:+s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                 printf -v conMsg "$reset[%s $logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
             else
@@ -642,7 +642,7 @@ log() {
         updateProgress)
             printf -v logMsg printf " [$format]" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                 printf -v conMsg "$load$eel$blue$bold[$reset$logColor$colorFormat$reset$blue$bold]$reset$end" "${colorArgs[@]}"
             else
@@ -654,7 +654,7 @@ log() {
             case $exitcode in
                 0)  printf -v logMsg "done${format:+ ($format)}.\n" "${args[@]}"
                     if (( _logColor )); then
-                        colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                        colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                         colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                         printf -v conMsg "$load$eel$green${bold}done${colorFormat:+ ($reset$logColor$colorFormat$reset$green$bold)}$reset.\n" "${colorArgs[@]}"
                     else
