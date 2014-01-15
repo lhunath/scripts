@@ -1948,8 +1948,17 @@ stackTrace() {
 
 # Make sure this file is sourced and not executed.
 ( return 2>/dev/null ) || {
-    emit -R "You should source this file, not execute it."
-    exit 1
+    help=$(sed -n '1,/_tocHash=/{ /^#/p; }' "$BASH_SOURCE")
+    if [[ $1 ]]; then
+        while [[ $1 ]]; do
+            awk "!/^# *[^ ]/{p=0} /^#     $1/||p{print; p=1}" <<< "$help"
+            shift
+        done
+    else
+        echo "$help"
+        echo
+        echo "To use bashlib, copy it into your PATH and put ''source bashlib'' at the top of your script."
+    fi
 }
 
 :
