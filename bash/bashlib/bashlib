@@ -631,7 +631,7 @@ log() {
         msg|startProgress)
             printf -v logMsg "[%s %-3s] $format$end" "$date" "$level" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                 printf -v conMsg "$reset[%s $logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
             else
@@ -642,7 +642,7 @@ log() {
         updateProgress)
             printf -v logMsg printf " [$format]" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                 printf -v conMsg "$load$eel$blue$bold[$reset$logColor$colorFormat$reset$blue$bold]$reset$end" "${colorArgs[@]}"
             else
@@ -654,7 +654,7 @@ log() {
             case $exitcode in
                 0)  printf -v logMsg "done${format:+ ($format)}.\n" "${args[@]}"
                     if (( _logColor )); then
-                        colorFormat=$(sed -e "s/$(requote "$reset")/$reset$logColor/g" -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
+                        colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                         colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
                         printf -v conMsg "$load$eel$green${bold}done${colorFormat:+ ($reset$logColor$colorFormat$reset$green$bold)}$reset.\n" "${colorArgs[@]}"
                     else
@@ -1276,7 +1276,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0|-d char] [-[cC] isAscending|-n] [-t number] [-a array|elements ...] [<<< elements]
+#       order [-0|-d char] [-[cC] isAscending|-n|-r] [-t number] [-a array|elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -1284,7 +1284,8 @@ reverse() {
 # The result is output on standard output.
 #
 # By default, the elements will be ordered using lexicographic comparison.
-# If the -n option is given, the elements will be considered integer numbers.
+# If the -n option is given, the elements will be ordered numerically.
+# If the -r option is given, the elements will be ordered randomly.
 # If the -c option is given, the command name following it will be used
 # as a comparator.
 # If the -C option is given, the bash code following it will be used
@@ -1313,11 +1314,12 @@ order() {
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nd:c:C:t:a: opt; do
+    while getopts :0nrd:c:C:t:a: opt; do
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
-            n) comparator=_order_number_ascends ;;
+            n) isAscending=_order_number_ascends ;;
+            r) isAscending=_order_random_ascends ;;
             c) isAscending=$OPTARG ;;
             C) isAscending=_order_cmd_ascends _order_cmd=$OPTARG ;;
             t) top=$OPTARG ;;
@@ -1338,8 +1340,8 @@ order() {
     fi
 
     # Iterate in reverse order.
-    for (( i = 2; i < ${#elements[@]}; ++i )); do
-        for (( j = i; j > 1; --j )); do
+    for (( i = 1; i < ${#elements[@]}; ++i )); do
+        for (( j = i; j > 0; --j )); do
             element=${elements[j]}
             if "$isAscending" "$element" "${elements[j-1]}"; then
                 elements[j]=${elements[j-1]}
@@ -1357,6 +1359,7 @@ order() {
 } # _____________________________________________________________________
 _order_string_ascends() { [[ $1 < $2 ]]; }
 _order_number_ascends() { (( $1 < $2 )); }
+_order_random_ascends() { (( RANDOM % 2 )); }
 _order_mtime_ascends() { [[ $1 -ot $2 ]]; }
 _order_cmd_ascends()    { bash -c "$_order_cmd" -- "$@"; }
 
