@@ -296,7 +296,7 @@ hex() {
 #
 #       unhex character
 #
-# Outputs the character that has the given decimal ASCII value.
+# Outputs the character that has the given hexadecimal ASCII value.
 #
 unhex() {
   printf \\x"$1"
