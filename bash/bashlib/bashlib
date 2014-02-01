@@ -73,7 +73,8 @@
 # Pops one element off the queue.
 #
 #     log [format] [arguments...]
-# Log an event at a certain importance level.  The event is expressed as a printf(1) format argument.
+# Log an event at a certain importance level.
+# The event is expressed as a printf(1) format argument.
 #
 #     emit [options] message... [-- [command args...]]
 # Display a message with contextual coloring.
@@ -191,7 +192,7 @@ genToc() {
 # |                                          .:: GLOBAL DECLARATIONS ::. |
 # |______________________________________________________________________|
 
-# Variables for global internal operation.
+# Variables for convenience sequences.
 bobber=(     '.' 'o' 'O' 'o' )
 spinner=(    '-' \\  '|' '/' )
 crosser=(    '+' 'x' '+' 'x' )
@@ -200,7 +201,7 @@ runner=(     '> >'           \
              ' >>'           )
 
 # Variables for terminal requests.
-[[ -t 2 ]] && {
+[[ -t 2 && $TERM != dumb ]] && {
     alt=$(      tput smcup  || tput ti      ) # Start alt display
     ealt=$(     tput rmcup  || tput te      ) # End   alt display
     hide=$(     tput civis  || tput vi      ) # Hide cursor
@@ -1951,8 +1952,18 @@ stackTrace() {
 
 # Make sure this file is sourced and not executed.
 ( return 2>/dev/null ) || {
-    emit -R "You should source this file, not execute it."
-    exit 1
+    help=$(sed -n '1,/_tocHash=/{ /^#/p; }' "$BASH_SOURCE")
+    if [[ $1 ]]; then
+        while [[ $1 ]]; do
+            awk "p && !/^# *[^ ]/ {exit}
+                 p || /^#     $1/ {print; p=1}" <<< "$help"
+            shift
+        done
+    else
+        echo "$help"
+        echo
+        echo "To use bashlib, copy it into your PATH and put ''source bashlib'' at the top of your script."
+    fi
 }
 
 :

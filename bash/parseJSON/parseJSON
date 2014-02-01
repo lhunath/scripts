@@ -1,7 +1,7 @@
 #! /usr/bin/env bash
 # ___________________________________________________________________________ #
 #                                                                             #
-#       parseJSON -- A utility for converting JSON into bash-readable data.   #
+#       plainjson -- A utility for converting JSON into plain data and back.  #
 #                                                                             #
 #                                                                             #
 #    Licensed under the Apache License, Version 2.0 (the "License");          #
@@ -32,14 +32,15 @@ source bashlib
 
 
 # Default configuration.
-delimitor='\n'
+delimitor=$'\n'
 
 # Options to change configuration.
-while getopts :zd:v arg; do
+while getopts :zd:vo arg; do
     case $arg in
         z) delimitor='\0';;
         d) delimitor=$OPTARG;;
         v) _logVerbosity=3;;
+        o) jsonout=1;;
     esac
 done
 
@@ -79,74 +80,143 @@ writeData() {
             printf '%s%s' "$type" "$context"
         done
 
-        printf "=%s$delimitor" "$data"
+        printf "=%s${delimitor:-\0}" "$data"
     }
 
     data=
     dirty=0
 }
+parseJSON() {
+    dirty=1
+    # Read loop.
+    while IFS= read -r -d '' -n1 char; do
 
-# Read loop.
-dirty=1
-while IFS= read -r -d '' -n1 char; do
-
-    if [[ $char = '"' ]]; then
-        if (( quoted = !quoted )); then
-            dbg "Quotes start."
-        else
-            dbg "Quotes end: %s" "$data"
-        fi
-        continue
-    fi
-
-    if (( ! quoted )); then
-        if [[ $char = '{' ]]; then
-            dbg "Object starts."
-
-            dirty=1
-            continue
-        elif [[ $char = '}' ]]; then
-            dbg "Object ends: %s" "$(peekContext)"
-
-            writeData
-            popContext
-            continue
-        elif [[ $char = '[' ]]; then
-            dbg "Array starts."
-
-            pushContext 0
-            continue
-        elif [[ $char = ']' ]]; then
-            dbg "Array ends: %s" "$(peekContext)"
-
-            writeData
-            popContext
-            continue
-        elif [[ $char = ':' ]]; then
-            dbg "Key: %s" "$data"
-
-            pushContext "$data"
-            data=
-            continue
-        elif [[ $char = ',' ]]; then
-            dbg "Element ends: %s" "$(peekContext)"
-
-            writeData
-
-            context=$(peekContext)
-            popContext
-            if isArray "$context"; then
-                pushContext "$((context + 1))"
+        if [[ $char = '"' ]]; then
+            if (( quoted = !quoted )); then
+                dbg "Quotes start."
+            else
+                dbg "Quotes end: %s" "$data"
             fi
-
-            dirty=1
-            continue
-        elif [[ $char = [$' \n\r\t\v'] ]]; then
-            # Ignore unquoted whitespace
             continue
         fi
+
+        if (( ! quoted )); then
+            if [[ $char = '{' ]]; then
+                dbg "Object starts."
+
+                dirty=1
+                continue
+            elif [[ $char = '}' ]]; then
+                dbg "Object ends: %s" "$(peekContext)"
+
+                writeData
+                popContext
+                continue
+            elif [[ $char = '[' ]]; then
+                dbg "Array starts."
+
+                pushContext 0
+                continue
+            elif [[ $char = ']' ]]; then
+                dbg "Array ends: %s" "$(peekContext)"
+
+                writeData
+                popContext
+                continue
+            elif [[ $char = ':' ]]; then
+                dbg "Key: %s" "$data"
+
+                pushContext "$data"
+                data=
+                continue
+            elif [[ $char = ',' ]]; then
+                dbg "Element ends: %s" "$(peekContext)"
+
+                writeData
+
+                context=$(peekContext)
+                popContext
+                if isArray "$context"; then
+                    pushContext "$((context + 1))"
+                fi
+
+                dirty=1
+                continue
+            elif [[ $char = [$' \n\r\t\v'] ]]; then
+                # Ignore unquoted whitespace
+                continue
+            fi
+        fi
+
+        data+=$char
+
+    done
+}
+startJSONContext() {
+    local context=$1
+    dbg 'Starting context: %s' "$context"
+
+    if isObject "$context"; then
+        printf "{'%s':" "$context"
+    else
+        printf '['
     fi
+}
+endJSONContexts() {
+    for (( p = $#; p > 0; --p )); do
+        context=${@:p:1}
+        dbg 'Ending context: %s' "$context"
 
-    data+=$char
+        if isObject "$context"; then
+            printf '}'
+        else
+            printf ']'
+        fi
+    done
+}
+# WIP
+parsePlain() {
+    firstElement=()
+    while IFS= read -r -d "$delimitor"; do
+        key=${REPLY%%=*} data=${REPLY#*=}
+        IFS='#.' read -r -a newContextStack <<< "$key"
+        newContextStack=("${newContextStack[@]:1}")
+        dbg 'key:%s data:<%s>' "$key" "$data"
 
-done
+        for s in "${!newContextStack[@]}"; do
+            newContext=${newContextStack[s]}
+            if (( s >= ${#oldContextStack[@]} )); then
+                # Start new context
+                startJSONContext "$newContext"
+                firstElement[s]=1
+                dbg 'firstElements: %s' "${firstElement[*]}"
+            #elif [[ ${oldContextStack[s]} != "$newContext" ]]; then
+                # End old contexts up to s
+                #endJSONContexts "${oldContextStack[@]:s}"
+                #startJSONContext "$newContext"
+                #firstElement=("${firstElement[@]:0:s}" 1)
+                #dbg 'firstElements: %s' "${firstElement[*]}"
+            fi
+        done
+        endJSONContexts "${oldContextStack[@]:s+1}"
+        firstElement=("${firstElement[@]:0:s+1}")
+                dbg 'firstElements: %s' "${firstElement[*]}"
+
+        if (( ${firstElement[s]} )); then
+            printf '"%s"' "$data"
+        else
+            printf ',"%s"' "$data"
+        fi
+
+        firstElement[s]=0
+        dbg 'firstElements: %s' "${firstElement[*]}"
+        oldContextStack=("${newContextStack[@]}")
+    done
+    endJSONContexts "${oldContextStack[@]}"
+}
+
+if (( jsonout )); then
+    parsePlain
+else
+    parseJSON
+fi
