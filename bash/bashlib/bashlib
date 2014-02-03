@@ -176,7 +176,7 @@ genToc() {
     done < ~/.bin/bashlib
 
     outhash=$(openssl md5 <<< "$out")
-    if [[ $_tocHash = $outhash ]]; then
+    if [[ $_tocHash = "$outhash" ]]; then
         inf 'Table of contents up-to-date.'
     else
         printf '%s' "$out"
@@ -1204,25 +1204,8 @@ ask() {
 # When no arguments are given, lines will be read from standard input.
 #
 trim() {
-   
-    # Initialize the vars.
-    local lines
-    local line
-    local oIFS
-
-    # Get the lines.
-    lines=( "$@" )
-    if (( ! ${#lines[@]} )); then
-        oIFS=$IFS; IFS=$'\n'
-        lines=( $(cat) )
-        IFS=$oIFS
-    fi
-
-    # Trim the lines
-    for line in "${lines[@]}"; do
-        line=${line##*([[:space:]])}; line=${line%%*([[:space:]])}
-        printf "%s" "$line"
-    done
+    { (( $# )) && printf '%s\n' "$@" || cat; } | \
+        sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
 } # _____________________________________________________________________
 
 
