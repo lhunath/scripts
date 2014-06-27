@@ -112,3 +112,7 @@ is:
 
 # Bugs
 Report any bugs or feature requests as issues in [GitHub](https://github.com/lhunath/scripts/issues) or contact <lhunath+gh@lyndir.com>
+
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/lhunath/scripts/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
