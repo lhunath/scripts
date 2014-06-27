@@ -76,15 +76,6 @@
 # Log an event at a certain importance level.
 # The event is expressed as a printf(1) format argument.
 #
-#     emit [options] message... [-- [command args...]]
-# Display a message with contextual coloring.
-#
-#     spinner [-code|message... [-- style color textstyle textcolor]]
-# Displays a spinner on the screen that waits until a certain time.
-#
-#     report [-code] [-e] failure-message [success-message]
-# This is a convenience function for replacement of spinner -code.
-#
 #     ask [-c optionchars|-d default] [-s|-S maskchar] message...
 # Ask a question and read the user's reply to it.  Then output the result on stdout.
 #
@@ -261,7 +252,7 @@ runner=(     '> >'           \
 # Outputs the character that has the given decimal ASCII value.
 #
 chr() {
-    printf \\"$(printf '%03o' "$1")"
+    printf "\\$(printf '%03o' "$1")"
 } # _____________________________________________________________________
 
 
@@ -274,7 +265,7 @@ chr() {
 # Outputs the decimal ASCII value of the given character.
 #
 ord() {
-    printf %d "'$1"
+    printf '%d' "'$1"
 } # _____________________________________________________________________
 
 
@@ -287,7 +278,7 @@ ord() {
 # Outputs the hexadecimal ASCII value of the given character.
 #
 hex() { 
-  printf '%x' "'$1"
+    printf '%x' "'$1"
 } # _____________________________________________________________________
 
 
@@ -300,7 +291,7 @@ hex() {
 # Outputs the character that has the given hexadecimal ASCII value.
 #
 unhex() {
-  printf \\x"$1"
+    printf "\\x$1"
 } # _____________________________________________________________________
 
 
@@ -313,10 +304,11 @@ unhex() {
 # Outputs the highest of the given numbers.
 #
 max() {
-  local max=$1 n
-  for n
-  do (( n > max )) && max=$n; done
-  printf %d "$max"
+    local max=$1 n
+    for n; do
+        (( n > max )) && max=$n
+    done
+    printf %d "$max"
 } # _____________________________________________________________________
 
 
@@ -329,10 +321,11 @@ max() {
 # Outputs the lowest of the given numbers.
 #
 min() {
-  local min=$1 n
-  for n
-  do (( n < min )) && min=$n; done
-  printf %d "$min"
+    local min=$1 n
+    for n; do
+        (( n < min )) && min=$n
+    done
+    printf '%d' "$min"
 } # _____________________________________________________________________
 
 
@@ -354,11 +347,11 @@ min() {
 # in every day, 60 minutes in every hour, 60 seconds in every minute and 1000 milliseconds in every second.
 #
 totime() {
-  local arg time year month day hour minute second milli
-  for arg; do
-    IFS=' -:.' read year month day hour minute second milli <<< "$arg" &&
-        (( time = (((((((((((10#$year * 12) + 10#$month) * 31) + 10#$day) * 24) + 10#$hour) * 60) + 10#$minute) * 60) + 10#$second) * 1000) + 10#$milli )) &&
-        printf '%d\n' "$time"
+    local arg time year month day hour minute second milli
+    for arg; do
+        IFS=' -:.' read year month day hour minute second milli <<< "$arg" &&
+            (( time = (((((((((((10#$year * 12) + 10#$month) * 31) + 10#$day) * 24) + 10#$hour) * 60) + 10#$minute) * 60) + 10#$second) * 1000) + 10#$milli )) &&
+            printf '%d\n' "$time"
     done
 } # _____________________________________________________________________
 
@@ -563,7 +556,7 @@ iterate() (
 #  ______________________________________________________________________
 # |__ Logging ___________________________________________________________|
 #
-#       log [format] [arguments...]
+#       log format [arguments...]
 #
 # Log an event at a certain importance level.  The event is expressed as a printf(1) format argument.
 # The current exit code remains unaffected by the execution of this function.
@@ -587,7 +580,7 @@ log() {
 
     # Handle options.
     local OPTIND=1
-    while getopts :puPr arg; do
+    while getopts :tpuPrR:d:n arg; do
         case $arg in
             p)
                 end='.. '
@@ -599,6 +592,14 @@ log() {
                 type=stopProgress ;;
             r)
                 ruler='____' ;;
+            R)
+                ruler=$OPTARG ;;
+            d)
+                end=$OPTARG ;;
+            n)
+                end= ;;
+            t)
+                date=$(date +"${_logDate:-%H:%M}") ;;
         esac
     done
     shift "$((OPTIND-1))"
@@ -627,14 +628,13 @@ log() {
     local logColor=${logColor:-$logLevelColor}
 
     # Generate the log message.
-    date=$(date +"${_logDate:-%H:%M}")
     case $type in
         msg|startProgress)
-            printf -v logMsg "[%s %-3s] $format$end" "$date" "$level" "${args[@]}"
+            printf -v logMsg "[${date:+%s }%-3s] $format$end" ${date:+"$date"} "$level" "${args[@]}"
             if (( _logColor )); then
                 colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
-                printf -v conMsg "$reset[%s $logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
+                printf -v conMsg "$reset[${date:+%s }$logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" ${date:+"$date"} "$level" "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -748,352 +748,9 @@ _logTrcColor=$grey _logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _
 
 
 #  ______________________________________________________________________
-# |__ Emit ______________________________________________________________|
-#
-#       emit [options] message... [-- [command args...]]
-#
-# Display a message with contextual coloring.
-#
-# DEPRECATED: Use inf and variants instead.
-#
-# When a command is provided, a spinner will be activated in front of the
-# message for as long as the command runs.  When the command ends, its
-# exit status will result in a message 'done' or 'failed' to be displayed.
-#
-# It is possible to only specify -- as final argument.  This will prepare
-# a spinner for you with the given message but leave it up to you to
-# notify the spinner that it needs to stop.  See the documentation for
-# 'spinner' to learn how to do this.
-#
-#   -n  Do not end the line with a newline.
-#   -b  Activate bright (bold) mode.
-#   -d  Activate half-bright (dim) mode.
-#   -g  Display in green.
-#   -y  Display in yellow.
-#   -r  Display in red.
-#   -w  Display in the default color.
-#
-#   -[code] A proxy-call to 'spinner -[code]'.
-#
-# Non-captialized versions of these options affect the * or the spinner
-# in front of the message.  Capitalized options affect the message text
-# displayed.
-#
-emit() {
-
-    # Proxy call to spinner.
-    [[ $# -eq 1 && $1 = -+([0-9]) ]] \
-        && { spinner $1; return; }
- 
-    # Initialize the vars.
-    local arg
-    local style=
-    local color=
-    local textstyle=
-    local textcolor=
-    local noeol=0
-    local cmd=0
-
-    # Parse the options.
-    spinArgs=()
-    for arg in $(getArgs odbwgyrDBWGYRn "$@"); do
-        case ${arg%% } in
-            d) style=$dim           ;;
-            b) style=$bold          ;;
-            w) color=$white         ;;
-            g) color=$green         ;;
-            y) color=$yellow        ;;
-            r) color=$red           ;;
-            D) textstyle=$dim       ;;
-            B) textstyle=$bold      ;;
-            W) textcolor=$white     ;;
-            G) textcolor=$green     ;;
-            Y) textcolor=$yellow    ;;
-            R) textcolor=$red       ;;
-            n) noeol=1
-               spinArgs+=(-n)       ;;
-            o) spinArgs+=("-$arg")  ;;
-        esac
-    done
-    shift $(getArgs -c odbwgyrDBWGYRn "$@")
-    while [[ $1 = +* ]]; do
-        spinArgs+=("-${1#+}")
-        shift
-    done
-
-    # Defaults.
-    color=${color:-$textcolor}
-    color=${color:-$green}
-    [[ $color = $textcolor && -z $style ]] && style=$bold
-
-    # Get the text message.
-    local text= origtext=
-    for arg; do [[ $arg = -- ]] && break; origtext+="$arg "; done
-    origtext=${origtext%% }
-    (( noeol )) && text=$origtext || text=$origtext$reset$(eol "$origtext")$'\n'
-
-    
-    # Trim off everything up to --
-    while [[ $# -gt 1 && $1 != -- ]]; do shift; done
-    [[ $1 = -- ]] && { shift; cmd=1; }
-
-    # Figure out what FD to use for our messages.
-    [[ -t 1 ]]; local fd=$(( $? + 1 ))
-
-    # Display the message or spinner.
-    if (( cmd )); then
-        # Don't let this Bash handle SIGINT.
-        #trap : INT
-
-        # Create the spinner in the background.
-        spinPipe=${TMPDIR:-/tmp}/bashlib.$$
-        { touch "$spinPipe" && rm -f "$spinPipe" && mkfifo "$spinPipe"; } 2>/dev/null \
-            || unset spinPipe
-        { spinner "${spinArgs[@]}" "$origtext" -- "$style" "$color" "$textstyle" "$textcolor" < "${spinPipe:-/dev/null}" & } 2>/dev/null
-        [[ $spinPipe ]] && echo > "$spinPipe"
-        spinPid=$!
-
-        # Execute the command for the spinner if one is given.
-        #fsleep 1 # Let the spinner initialize itself properly first. # Can probably remove this now that we echo > spinPipe?
-        if   (( $# == 1 )); then command=$1
-        elif (( $# >  1 )); then command=$(printf '%q ' "$@")
-        else return 0; fi
-
-        eval "$command" >/dev/null \
-            && spinner -0 \
-            || spinner -1
-    else
-        # Make reset codes restore the initial font.
-        local font=$reset$textstyle$textcolor
-        text=$font${text//$reset/$font}
-        
-        printf "\r$reset $style$color* %s$reset" "$text"            >&$fd
-    fi
-} # _____________________________________________________________________
-
-
-
-#  ______________________________________________________________________
-# |__ Spinner ___________________________________________________________|
-#
-#       spinner [-code|message... [-- style color textstyle textcolor]]
-#
-# DEPRECATED: Use pinf and variants instead.
-#
-# Displays a spinner on the screen that waits until a certain time.
-# Best used through its interface provided by 'emit'.
-#
-#   style       A terminal control string that defines the style of the spinner.
-#   color       A terminal control string that defines the color of the spinner.
-#   textstyle   A terminal control string that defines the style of the message.
-#   textcolor   A terminal control string that defines the color of the message.
-#
-#   -[code]     Shut down a previously activated spinner with the given exit
-#               code.  If the exit code is 0, a green message 'done' will be
-#               displayed.  Otherwise a red message 'failed' will appear.
-#               The function will return with this exit code as result.
-#
-# You can manually specify a previously started spinner by putting its PID in
-# the 'spinPid' variable.  If this variable is not defined, the PID of the most
-# recently backgrounded process is used.  The 'spinPid' variable is unset upon
-# each call to 'spinner' and reset to the PID of the spinner if one is created.
-#
-spinner() {
-
-    # Check usage.
-    (( ! $# )) || getArgs -q :h "$@" && {
-        emit -y 'Please specify a message as argument or a status option.'
-        return 1
-    }
-
-    # Initialize spinner vars.
-    # Make sure monitor mode is off or we won't be able to trap INT properly.
-    local monitor=0; [[ $- = *m* ]] && monitor=1
-    local done=
-
-    # Place the trap for interrupt signals.
-    trap 'done="${red}failed"' USR2
-    trap 'done="${green}done"' USR1
-
-    # Initialize the vars.
-    local pid=${spinPid:-$!}
-    local graphics=( "${bobber[@]}" )
-    local style=$bold
-    local color=$green
-    local textstyle=
-    local textcolor=
-    local output=
-    local noeol=
-    unset spinPid
-
-    # Any remaining options are the exit status of an existing spinner or spinner type.
-    while [[ $1 = -* ]]; do
-        arg=${1#-}
-        shift
-
-        # Stop parsing when arg is --
-        [[ $arg = - ]] && break
-
-        # Process arg: Either a spinner type or result code.
-        if [[ $arg = *[^0-9]* ]]; then
-            case $arg in
-                b) graphics=( "${bobber[@]}" )  ;;
-                c) graphics=( "${crosser[@]}" ) ;;
-                r) graphics=( "${runner[@]}" )  ;;
-                s) graphics=( "${spinner[@]}" ) ;;
-                o) output=1                     ;;
-                n) noeol=1                      ;;
-            esac
-        elif [[ $pid ]]; then
-            [[ $arg = 0 ]] \
-                && kill -USR1 $pid 2>/dev/null \
-                || kill -USR2 $pid 2>/dev/null
-            
-            trap - INT
-            wait $pid 2>/dev/null
-
-            return $arg
-        fi
-    done
- 
-    # Read arguments.
-    local text= origtext=
-    for arg; do [[ $arg = -- ]] && break; origtext+="$arg "; done
-    origtext=${origtext% }
-    local styles=$*; [[ $styles = *' -- '* ]] || styles=
-    read -a styles <<< "${styles##* -- }"
-    [[ ${styles[0]} ]] && style=${styles[0]}
-    [[ ${styles[1]} ]] && color=${styles[1]}
-    [[ ${styles[2]} ]] && textstyle=${styles[2]}
-    [[ ${styles[3]} ]] && textcolor=${styles[3]}
-
-    # Figure out what FD to use for our messages.
-    [[ -t 1 ]]; local fd=$(( $? + 1 ))
-
-    # Make reset codes restore the initial font.
-    local font=$reset$textstyle$textcolor
-    origtext=$font${origtext//$reset/$font}
-    (( noeol )) && text=$origtext || text=$origtext$reset$(eol "$origtext")
-
-    # Spinner initial status.
-    printf "\r$save$eel$reset $style$color* %s$reset" "$text"       >&$fd
-    (( output )) && printf "\n"                                     >&$fd
-
-    # Render the spinner.
-    set +m
-    local i=0
-    while [[ ! $done ]]; do
-        IFS= read -r -d '' newtext || true
-        newtext=${newtext%%$'\n'}; newtext=${newtext##*$'\n'}
-        if [[ $newtext = +* ]]; then
-            newtext="$origtext [${newtext#+}]"
-        fi
-        if [[ $newtext ]]; then
-            newtext="$font${newtext//$reset/$font}"
-            (( noeol )) && text=$newtext || text=$newtext$reset$(eol "$newtext")
-        fi
-
-        if (( output ))
-        then printf "\r"                                            >&$fd
-        else printf "$load$eel"                                     >&$fd
-        fi
-
-        if (( output ))
-        then printf "$reset $style$color$blue%s %s$reset" \
-                "${graphics[i++ % 4]}" "$text"                      >&$fd
-        else printf "$reset $style$color%s %s$reset" \
-                "${graphics[i++ % 4]}" "$text"                      >&$fd
-        fi
-
-        fsleep .25 # Four iterations make one second.
-
-        # Cancel when calling script disappears.
-        kill -0 $$ >/dev/null || done="${red}aborted"
-    done
-
-    # Get rid of the spinner traps.
-    trap - USR1 USR2; (( monitor )) && set -m
-
-    # Spinner final status.
-    if (( output ))
-    then text=; printf "\r"                                         >&$fd
-    else printf "$load"                                             >&$fd
-    fi
-
-    printf "$eel$reset $style$color* %s${text:+ }$bold%s$font.$reset\n" \
-            "$text" "$done"                                         >&$fd
-} # _____________________________________________________________________
-
-
-
-#  ______________________________________________________________________
-# |__ report ___________________________________________________________|
-#
-#       report [-code] [-e] failure-message [success-message]
-#
-# This is a convenience function for replacement of spinner -code.
-#
-# DEPRECATED: Use fnip and variants instead.
-#
-# It checks either the exit code of the previously completed command or
-# the code provided as option to determine whether to display the success
-# or failure message.  It calls spinner -code to complete an actively
-# emitted message if there is one.  The success message is optional.
-#
-#   -[code] The exit code to use.
-#   -e      Exit the script on failure.
-#
-report() {
-
-    # Exit Status of previous command.
-    local code=$?
-
-    # Parse the options.
-    while [[ $1 = -* && $2 ]]; do
-        arg=${1#-}
-        shift
-
-        # Stop parsing when arg is --
-        [[ $arg = - ]] && break
-
-        # Process arg: Either a spinner type or result code.
-        if [[ $arg = *[^0-9]* ]]; then
-            case $arg in
-            esac
-        else code=$arg
-        fi
-    done
-
-    # Initialize the vars.
-    local failure=$1
-    local success=$2
-
-    # Check usage.
-    (( ! $# )) || getArgs -q :h "$@" && {
-        emit -y 'Please specify at least a failure message as argument.'
-        return 1
-    }
-
-    # Proxy call to spinner.
-    (( spinPid )) \
-        && { spinner -$code; }
- 
-    # Success or failure message.
-    if (( ! code ))
-    then [[ $success ]] && emit     "  $success"
-    else [[ $failure ]] && emit -R  "  $failure"
-    fi
-
-    # Pass on exit code.
-    return $code
-} # _____________________________________________________________________
-
-
-
-#  ______________________________________________________________________
 # |__ Ask _______________________________________________________________|
 #
-#       ask [-c optionchars|-d default] [-s|-S maskchar] message...
+#       ask [-c optionchars|-d default] [-s|-S maskchar] format [arguments...]
 #
 # Ask a question and read the user's reply to it.  Then output the result on stdout.
 #
@@ -1117,7 +774,7 @@ ask() {
    
    # Check usage.
     (( ! $# )) || getArgs -q :h "$@" && {
-        emit -y 'Please specify a question as argument.'
+        wrn 'Please specify a question as argument.'
         return 1
     }
  
@@ -1129,7 +786,7 @@ ask() {
     local silent=
     local valid=
     local muteChar=
-    local message=
+    local format=
 
     # Parse the options.
     local OPTIND=1
@@ -1156,8 +813,8 @@ ask() {
     [[ -t 1 ]] && local fd=1 || local fd=2
 
     # Ask the question.
-    message=$1; shift; printf -v message "$message" "$@"
-    emit -yn "$message${option:+ [$option]}${options:+ [$options]} "
+    format=$1; shift
+    level=${level:-WRN} log -n "$format${option:+ [%s]}${options:+ [%s]} " "$@" ${option:+"$option"} ${options:+"$options"}
 
     # Read the reply.
     exec 8<&0; [[ -t 8 ]] || exec 8</dev/tty
@@ -1294,7 +951,7 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local elements=() element delimitor=$'\n' i isAscending=_order_string_ascends top=0 array= arrayElements=
+    local elements=() element delimitor=$'\n' i isAscending=string_ascends top=0 arrayName= array=
 
     # Parse the options.
     local OPTIND=1
@@ -1302,19 +959,19 @@ order() {
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
-            n) isAscending=_order_number_ascends ;;
-            r) isAscending=_order_random_ascends ;;
+            n) isAscending=number_ascends ;;
+            r) isAscending=random_ascends ;;
             c) isAscending=$OPTARG ;;
-            C) isAscending=_order_cmd_ascends _order_cmd=$OPTARG ;;
+            C) isAscending=bash_ascends bash_ascends_code=$OPTARG ;;
             t) top=$OPTARG ;;
-            a) array=$OPTARG arrayElements=$array[@] ;;
+            a) arrayName=$OPTARG array=$arrayName[@] ;;
         esac
     done
     shift "$((OPTIND-1))"
 
     # Get the elements.
-    if [[ $array ]]; then
-        elements=( "${!arrayElements}" )
+    if [[ $arrayName ]]; then
+        elements=( "${!array}" )
     elif (( $# )); then
         elements=( "$@" )
     else
@@ -1341,11 +998,11 @@ order() {
         printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
     fi
 } # _____________________________________________________________________
-_order_string_ascends() { [[ $1 < $2 ]]; }
-_order_number_ascends() { (( $1 < $2 )); }
-_order_random_ascends() { (( RANDOM % 2 )); }
-_order_mtime_ascends() { [[ $1 -ot $2 ]]; }
-_order_cmd_ascends()    { bash -c "$_order_cmd" -- "$@"; }
+string_ascends() { [[ $1 < $2 ]]; }
+number_ascends() { (( $1 < $2 )); }
+random_ascends() { (( RANDOM % 2 )); }
+mtime_ascends()  { [[ $1 -ot $2 ]]; }
+bash_ascends()   { bash -c "$bash_ascends_code" -- "$@"; }
 
 
 #  ______________________________________________________________________
@@ -1461,8 +1118,8 @@ getArgs() {
 
     # Check usage.
     (( ! $# )) && {
-        emit -y 'Please provide the arguments to search for in' \
-                'getopts(P) format followed by the positional parameters.'
+        wrn 'Please provide the arguments to search for in' \
+            'getopts(P) format followed by the positional parameters.'
         return 1
     }
 
@@ -1524,8 +1181,8 @@ showHelp() {
 
     # Check usage.
     (( $# < 3 )) || getArgs -q :h "$@" && {
-        emit -y 'Please provide the name, description, author and options' \
-                'of the application.'
+        wrn 'Please provide the name, description, author and options' \
+            'of the application.'
         return 1
     }
 
@@ -1574,17 +1231,19 @@ showHelp() {
 #
 #   -e      Use backslashes rather than single quotes.
 #   -d      Use double-quotes rather than single quotes (does NOT disable expansions!).
+#   -a      Normally, shquote doesn't quote arguments that don't need it.  This forces all arguments to be quoted.
 #
 shquote() {
 
     # Initialize the defaults.
-    local arg escape=0 sq="'\\''" dq='\"' quotedArgs=() type=single
+    local arg escape=0 sq="'\\''" dq='\"' quotedArgs=() type=single always=0
 
     # Parse the options.
     while [[ $1 = -* ]]; do
         case $1 in
             -e) type=escape  ;;
             -d) type=double  ;;
+            -a) always=1     ;;
             --) shift; break ;;
         esac
         shift
@@ -1592,6 +1251,8 @@ shquote() {
 
     # Print out each argument, quoting it properly.
     for arg; do
+        (( ! always )) && [[ $arg = "$(printf %q "$arg")" ]] && quotedArgs+=("$arg") && continue
+
         case "$type" in
             escape)
                 quotedArgs+=("$(printf "%q"     "$arg")") ;;
@@ -1649,7 +1310,7 @@ shorten() {
 
     # Check usage.
     (( $# < 1 )) || getArgs -q :h "$@" && {
-        emit -y 'Please provide the path to shorten.'
+        wrn 'Please provide the path to shorten.'
         return 1
     }
 
@@ -1768,8 +1429,8 @@ inArray() {
 
     # Check usage.
     (( $# < 1 )) || getArgs -q :h "$@" && {
-        emit -y 'Please provide the element to search for and the array' \
-                'to search through.'
+        wrn 'Please provide the element to search for and the array' \
+            'to search through.'
         return 1
     }
 
@@ -1887,40 +1548,33 @@ _anfunc_trap() {
 # Output the current script's function execution stack.
 #
 stackTrace() {
-
     # Some general debug information.
-    printf "\t$bold%s$reset v$bold%s$reset" "$BASH" "$BASH_VERSION\n"
-    printf "    Was running: $bold%s %s$reset" "$BASH_COMMAND" "$*\n"
-    printf "\n"
-    printf "    [Shell    : $bold%15s$reset]    [Subshells : $bold%5s$reset]\n" "$SHLVL" "$BASH_SUBSHELL"
-    printf "    [Locale   : $bold%15s$reset]    [Runtime   : $bold%5s$reset]\n" "$LC_ALL" "${SECONDS}s"
-    printf "\n"
+    wrn "    [PID       : %15s]    [PPID       : %8s]    [Main PID   : %8s]" "$BASHPID" "$PPID" "$$"
+    wrn "    [Level     : %15s]    [Subshells  : %8s]    [Runtime    : %7ss]" "$SHLVL" "$BASH_SUBSHELL" "$SECONDS"
+    wrn "    [Locale    : %15s]    [IFS        : %8s]" "${LC_ALL:-${LC_COLLATE:-${LANG:-C}}}" "$(printf %q "$IFS")"
+    wrn "    Dir Stack  : %s" "${DIRSTACK[*]}"
+    wrn "    Shell      : %s v%s" "$BASH" "$BASH_VERSION"
+    wrn "    Shell Opts : %s" "${SHELLOPTS//:/, }"
+    wrn "    Bash Opts  : %s" "${BASHOPTS//:/, }"
+    wrn "    Functions  :"
+
 
     # Search through the map.
-    local arg=0
-    for i in ${!FUNCNAME[@]}; do
-        #if (( i )); then
+    local arg=0 
+    for stack in "${!FUNCNAME[@]}"; do
+        (( stack+1 >= ${#BASH_SOURCE[@]} )) && break
 
-            # Print this execution stack's location.
-            printf "$reset  $bold-$reset $green"
-            [[ ${BASH_SOURCE[i+1]} ]] \
-                && printf "%s$reset:$green$bold%s" "${BASH_SOURCE[i+1]}" "${BASH_LINENO[i]}" \
-                || printf "${bold}Prompt"
-
-            # Print this execution stack's function and positional parameters.
-            printf "$reset :\t$bold%s(" "${FUNCNAME[i]}"
-            [[ ${BASH_ARGC[i]} ]] && \
-                for (( j = 0; j < ${BASH_ARGC[i]}; j++ )); do
-                    (( j )) && printf ', '
-                    printf "%s" "${BASH_ARGV[arg]}"
-                    let arg++
-                done
-
-            # Print the end of this execution stack's line.
-            printf ")$reset\n"
-        #fi
+        func=${FUNCNAME[stack]}
+        line=${BASH_LINENO[stack]}
+        file=${BASH_SOURCE[stack+1]}
+        args=()
+        for (( arg=0, s=0; s <= stack; ++s )); do
+            for (( sarg=0; sarg < ${BASH_ARGC[s]:-0}; ++sarg, ++arg )); do
+                (( s == stack )) && args[${BASH_ARGC[s]} - sarg]=${BASH_ARGV[arg]}
+            done
+        done
+        wrn '%40s:%-3d | %s %s' "$file" "$line" "$func" "$(printf '%s ' "$(shquote "${args[@]}")")"
     done
-    printf "\n"
 
 } # _____________________________________________________________________
 
