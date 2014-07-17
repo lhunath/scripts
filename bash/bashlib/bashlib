@@ -193,6 +193,8 @@ runner=(     '> >'           \
 
 # Variables for terminal requests.
 [[ -t 2 && $TERM != dumb ]] && {
+    COLUMNS=$(  tput cols   || tput co      ) # Columns in a line
+    LINES=$(    tput lines  || tput li      ) # Lines on screen
     alt=$(      tput smcup  || tput ti      ) # Start alt display
     ealt=$(     tput rmcup  || tput te      ) # End   alt display
     hide=$(     tput civis  || tput vi      ) # Hide cursor
@@ -393,7 +395,6 @@ eol() {
 #
 hr() {
     local pattern=${1:--} length=${2:-$COLUMNS} ruler=
-    (( length )) || length=$(tput cols)
 
     while (( ${#ruler} < length )); do
         ruler+=${pattern:0:length-${#ruler}}
@@ -521,7 +522,6 @@ latest() (
 # or 1 if z is not specified.
 #
 iterate() (
-    set -x
     local command=( "$@" ) iterationCommand=() loop= a= arg= current=() step=() target=()
     for a in "${!command[@]}"; do
         arg=${command[a]}
@@ -917,7 +917,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0|-d char] [-[cC] isAscending|-n|-r] [-t number] [-a array|elements ...] [<<< elements]
+#       order [-0|-d char] [-[fF] isDesired] [-[cC] isAscending|-n|-r|-t] [-T number] [-a array|elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -927,6 +927,8 @@ reverse() {
 # By default, the elements will be ordered using lexicographic comparison.
 # If the -n option is given, the elements will be ordered numerically.
 # If the -r option is given, the elements will be ordered randomly.
+# If the -f option is given, the command name following it will be used
+# as a filter.
 # If the -c option is given, the command name following it will be used
 # as a comparator.
 # If the -C option is given, the bash code following it will be used
@@ -936,7 +938,9 @@ reverse() {
 # array is mutated to contain the result.
 # If number is 0, all results are returned.
 #
-# If given, isAscending comparator command will be executed for each element
+# isDesired is a command name which will get one parameter.  The parameter
+# is an element which will only be included if the command exits successfully.
+# isAscending is a command name which will be executed for each element
 # comparison and will be passed two element arguments.  The command should
 # succeed if the first argument is less than the second argument for the
 # purpose of this sort.
@@ -951,32 +955,40 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local elements=() element delimitor=$'\n' i isAscending=string_ascends top=0 arrayName= array=
+    local delimitor=$'\n' i isDesired=true isAscending=string_ascends top=0 arrayName= array=
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nrd:c:C:t:a: opt; do
+    while getopts :0nrd:f:F:c:C:tT:a: opt; do
         case $opt in
             0) delimitor=$'\0' ;;
             d) delimitor=$OPTARG ;;
             n) isAscending=number_ascends ;;
             r) isAscending=random_ascends ;;
+            t) isAscending=mtime_ascends ;;
+            f) isDesired=$OPTARG ;;
+            F) isDesired=bash_desired bash_desired_code=$OPTARG ;;
             c) isAscending=$OPTARG ;;
             C) isAscending=bash_ascends bash_ascends_code=$OPTARG ;;
-            t) top=$OPTARG ;;
+            T) top=$OPTARG ;;
             a) arrayName=$OPTARG array=$arrayName[@] ;;
         esac
     done
     shift "$((OPTIND-1))"
 
     # Get the elements.
+    local elements=() element
     if [[ $arrayName ]]; then
-        elements=( "${!array}" )
+        for element in "${!array}"; do
+            "$isDesired" "$element" && elements+=("$element")
+        done
     elif (( $# )); then
-        elements=( "$@" )
+        for element; do
+            "$isDesired" "$element" && elements+=("$element")
+        done
     else
-        while IFS= read -r -d "$delimitor"; do
-            elements+=("$REPLY")
+        while IFS= read -r -d "$delimitor" element; do
+            "$isDesired" "$element" && elements+=("$element")
         done
     fi
 
@@ -998,11 +1010,16 @@ order() {
         printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
     fi
 } # _____________________________________________________________________
-string_ascends() { [[ $1 < $2 ]]; }
-number_ascends() { (( $1 < $2 )); }
-random_ascends() { (( RANDOM % 2 )); }
-mtime_ascends()  { [[ $1 -ot $2 ]]; }
-bash_ascends()   { bash -c "$bash_ascends_code" -- "$@"; }
+string_ascends()    { [[ $1 < $2 ]]; }
+number_ascends()    { (( $1 < $2 )); }
+random_ascends()    { (( RANDOM % 2 )); }
+mtime_ascends()     { [[ $1 -ot $2 ]]; }
+exists_desired()    { [[ -e $1 ]]; }
+line_desired()      { [[ $1 ]]; }
+code_desired()      { line_desired "$1" && ! comment_desired "$1"; }
+comment_desired()   { line_desired "$1" && [[ $1 = @(#|//|/\*)* ]]; }
+bash_desired()      { bash -c "$bash_desired_code" -- "$@"; }
+bash_ascends()      { bash -c "$bash_ascends_code" -- "$@"; }
 
 
 #  ______________________________________________________________________
@@ -1086,77 +1103,76 @@ fsleep() {
 
 
 #  ______________________________________________________________________
-# |__ GetArgs ___________________________________________________________|
+# |__ options ___________________________________________________________|
 #
-#       getArgs [options] optstring [args...]
+#       options [option description]...
 #
-# Retrieve all options present in the given arguments.
+# Specify and handle options in arguments.
 #
-# This is a wrapper for getopts(P) which will safely work inside functions.
-# It manages OPTIND for you and returns a list of options found in the
-# provided arguments.
+# The 'setopt' function will be called for each option expected option
+# passed to the script, with $1 set to the option character and $2
+# its description.  Check OPTARG if the option takes an argument.
+# 'setopt' will be called with '?' if an invalid option is passed.
 #
-#   optstring   This is a string of characters in which each character
-#               represents an option to look for in the arguments.
-#               See getopts(P) for a description of the optstring syntax.
+# Unless specified, the -h option will show a usage description,
+# explaining the options.
 #
-#   args        This is a list of arguments in which to look for options.
-#               Most commonly, you will use "$@" to supply these arguments.
+# Proposed usage:
+# setopt() {
+#     case "$1" in
+#         a) echo "got option a" ;;
+#         b) echo "got option b with argument $OPTARG" ;;
+#     esac
+# }
+# options \
+#     a   'option a' \
+#     b:  'option b with argument'
 #
-#   -c  Instead of output the arguments, output OPTARGS.
-#   -q  Be quiet.  No arguments are displayed.  Only the exit code is set.
-#   -n  Use newlines as a separator between the options that were found.
-#   -0  Use NULL-bytes as a separator between the options that were found.
-#
-# If any given arguments are found, an exit code of 0 is returned.  If none
-# are found, an exit code of 1 is returned.
-#
-# After the operation, OPTARGS is set the the index of the last argument
-# that has been parsed by getArgs.  Ready for you to use shift $OPTARGS.
-#
-getArgs() {
+options() {
 
-    # Check usage.
-    (( ! $# )) && {
-        wrn 'Please provide the arguments to search for in' \
-            'getopts(P) format followed by the positional parameters.'
-        return 1
-    }
-
-    # Initialize the defaults.
-    local arg
-    local found=0
-    local quiet=0
-    local count=0
-    local delimitor=' '
-
-    # Parse the options.
-    while [[ $1 = -* ]]; do
-        case $1 in
-            -q) quiet=1         ;;
-            -c) count=1         ;;
-            -n) delimitor=$'\n' ;;
-            -0) delimitor=$'\0' ;;
-        esac
-        shift
+    # Parse the expected options and their description.
+    declare -A options=()
+    while (( $# )); do
+        local optchar=$1 optdesc=$2
+        shift 2 || ftl 'Missing arguments, expected option (%s), description (%s).' "$optchar" "$optdesc" || exit
+        options[$optchar]=$optdesc
     done
 
-    # Get the optstring.
-    local optstring=$1; shift
+    # Find the script's options.
+    local argc=${BASH_ARGC[@]: -1} argv=("${BASH_ARGV[@]: -argc}") arg
+    local optstring=$(printf %s "${!options[@]}")h
+    set -- # Sigh.  BASH_ARGV is all backwards.
+    for arg in "${argv[@]}"; do
+        set -- "$arg" "$@"
+    done
 
-    # Enumerate the arguments.
-    local OPTIND=1
+    # Handle the script's options.
     while getopts "$optstring" arg; do
-        [[ $arg != '?' ]] && found=1
+        if [[ $arg = h && ! ${options[h]} ]]; then
+            # Show usage message.
+            [[ -t 1 ]]; local fd=$(( $? + 1 )) optarg
 
-        (( quiet + count )) || \
-            printf "%s${OPTARG:+ }%s%s" "$arg" "$OPTARG" "$delimitor"
+            # Print out the app usage.
+            printf "  Usage: $reset$bold%s$reset" "${BASH_SOURCE[1]##*/}"   >&$fd
+            for optchar in "${!options[@]}"; do
+                [[ $optchar = *: ]] && optarg=" arg" || optarg=
+                printf " [$bold$green-%s$reset%s]" "${optchar%:}" "$optarg" >&$fd
+            done
+            printf "\n\n"                                                   >&$fd
+
+            # Print out the option descriptions.
+            for optchar in "${!options[@]}"; do
+                local optdesc=${options[$optchar]}
+                [[ $optchar = *: ]] && optarg=" arg" || optarg=
+                printf "    $bold$green-%s$reset%s\t" "${optchar%:}" "$optarg"
+                fmt -w "$COLUMNS" <<< "${optdesc//+( )/ }" | sed $'1!s/^/ \t/'
+                printf "\n"
+            done | column -t -s $'\t'                                       >&$fd
+        else
+            optchar=$arg; [[ ! ${options[$arg]} && ${options[$arg:]} ]] && optchar=$arg:
+            setopt "$arg" "${options[$arg]}"
+        fi
     done
-    OPTARGS=$(( OPTIND - 1 ))
-
-    # Any arguments found?
-    (( count )) && printf "%s" "$OPTARGS"
-    return $(( ! found ))
 } # _____________________________________________________________________
 
 
