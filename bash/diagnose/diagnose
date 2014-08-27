@@ -196,6 +196,7 @@ if (( $# )); then
     probeHostNames=( "$@" )
 else
     probeHostAddrs=(
+        85.12.8.104 # iVPN
         8.8.8.8 # Google DNS
         8.8.4.4 # Google DNS
         64.95.64.190 # OpenDNS

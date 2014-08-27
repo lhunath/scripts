@@ -378,6 +378,22 @@ exists() {
 
 
 #  ______________________________________________________________________
+# |__ FirstExists ____________________________________________________________|
+#
+#       firstExists file...
+#
+# Outputs the first of the arguments that is a file which exists.
+#
+firstExists() {
+    local file;
+    for file; do
+        [[ -e "$file" ]] && printf %s "$file" && exit
+    done
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
 # |__ Eol _______________________________________________________________|
 #
 #       eol message
@@ -606,6 +622,7 @@ log() {
     (( ! ${#args[@]} )) && [[ $format ]] && { args=("$format") format=%s; local bold=; }
 
     # Level-specific settings.
+    local logLevelColor
     case $level in
         TRC)    (( supported = _logVerbosity >= 4 ))
                 logLevelColor=$_logTrcColor ;;
@@ -624,7 +641,7 @@ log() {
                 exit 1 ;;
     esac
     (( ! supported )) && return "$exitcode"
-    local logColor=${logColor:-$logLevelColor}
+    local logColor=${_logColor:+$logLevelColor}
 
     # Generate the log message.
     date=$(date +"${_logDate:-%H:%M}")
@@ -634,7 +651,7 @@ log() {
             if (( _logColor )); then
                 colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
                 colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
-                printf -v conMsg "$reset[%s $logLevelColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
+                printf -v conMsg "$reset[%s $logColor%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" "$date" "$level" "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -704,8 +721,7 @@ log() {
     if [[ $type = startProgress && ! $_logSpinner ]]; then
         {
             set +m
-            trap 'touch exit; printf %s "$show"' EXIT
-            echo "$BASHPID" > start
+            trap 'printf %s "$show"' EXIT
             printf %s "$hide"
             while printf "$eel$blue$bold[$reset%s$reset$blue$bold]$reset\b\b\b" "${spinner[s++ % ${#spinner[@]}]}" && sleep .1
             do :; done
