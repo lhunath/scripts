@@ -97,9 +97,6 @@
 #     fsleep time
 # Wait for the given (fractional) amount of seconds.
 #
-#     getArgs [options] optstring [args...]
-# Retrieve all options present in the given arguments.
-#
 #     showHelp name description author [option description]...
 # Generate a prettily formatted usage description of the application.
 #
@@ -788,12 +785,6 @@ _logTrcColor=$grey _logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _
 #
 ask() {
    
-   # Check usage.
-    (( ! $# )) || getArgs -q :h "$@" && {
-        wrn 'Please specify a question as argument.'
-        return 1
-    }
- 
     # Initialize the vars.
     local opt arg
     local option=
@@ -1211,13 +1202,6 @@ options() {
 #
 showHelp() {
 
-    # Check usage.
-    (( $# < 3 )) || getArgs -q :h "$@" && {
-        wrn 'Please provide the name, description, author and options' \
-            'of the application.'
-        return 1
-    }
-
     # Parse the options.
     local appName=$1; shift
     local appDesc=${1//+([[:space:]])/ }; shift
@@ -1340,12 +1324,6 @@ requote() {
 #
 shorten() {
 
-    # Check usage.
-    (( $# < 1 )) || getArgs -q :h "$@" && {
-        wrn 'Please provide the path to shorten.'
-        return 1
-    }
-
     # Parse the options.
     local suffix path pwd=$PWD
     [[ $1 = -p ]] && { pwd=$2; shift 2; }
@@ -1458,13 +1436,6 @@ buildarray() {
 #   array   This is a list of elements to search through.
 #
 inArray() {
-
-    # Check usage.
-    (( $# < 1 )) || getArgs -q :h "$@" && {
-        wrn 'Please provide the element to search for and the array' \
-            'to search through.'
-        return 1
-    }
 
     # Parse the options.
     local element
