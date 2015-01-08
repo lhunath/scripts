@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+source bashlib
+
+
+# Utilities.
+gitg() {
+    GIT_DIR="$dcs/git.global" \
+    GIT_WORK_TREE="$workdir" \
+    command git "$@"
+}
+gitl() {
+    GIT_DIR="$dcs/git.local" \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES="$dcs/git.global/objects" \
+    GIT_WORK_TREE="$workdir" \
+    command git "$@"
+}
+repo_local() {
+    repo_git=gitl repo_other_git=gitg repo_branch=$branch_local
+}
+repo_global() {
+    repo_git=gitg repo_other_git=gitl repo_branch=$branch_global
+}
+git() {
+    "$repo_git" "$@"
+}
+ogit() {
+    "$repo_other_git" "$@"
+}
+githas() {
+    git ls-files --error-unmatch "$@" >/dev/null 2>&1
+}
+ogithas() {
+    ogit ls-files --error-unmatch "$@" >/dev/null 2>&1
+}
+
+
+# Initialize our working directory.
+workdir=$(
+    default=$PWD
+    until [[ -e .dcs.d || $PWD = / ]]; do cd ..; done
+    [[ -e .dcs.d ]] && echo "$PWD" || echo "$default"
+)
+dcs=$workdir/.dcs.d
+if [[ ! -e "$dcs" ]]; then
+    [[ $(ask -c Ny 'Initialize DCS in %s?' "$workdir") = y ]] || exit
+    mkdir -p "$dcs"
+fi
+branch_global=global/master
+branch_local=local/${HOSTNAME%%.*}
+if [[ ! -e "$dcs/git.global" ]]; then
+    command git init --bare "$dcs/git.global"
+    echo "ref: refs/heads/$branch_global" > "$dcs/git.global/HEAD"
+elif [[ $(gitg symbolic-ref --short HEAD) != $branch_global ]]; then
+    gitg checkout -B "$branch_global"
+fi
+if [[ ! -e "$dcs/git.local" ]]; then
+    command git init --bare "$dcs/git.local"
+    echo "ref: refs/heads/$branch_local" > "$dcs/git.local/HEAD"
+elif [[ $(gitl symbolic-ref --short HEAD) != $branch_local ]]; then
+    gitl checkout -B "$branch_local"
+fi
+
+
+# Update global and local exclusion patterns.
+updateRepos() {
+    if [[ ! -e "$dcs/ignore.global" ]]; then
+        echo "/.dcs.d/git.*"           >"$dcs/ignore.global"
+        gitg add "$dcs/ignore.global"
+    fi
+    ignored=$(cat "$dcs/ignore.global"  "$dcs/ignore.local"   2>/dev/null)
+    printf '%s\n' "$ignored"           >"$dcs/git.local/info/exclude"
+    printf '%s\n' "$ignored"           >"$dcs/git.global/info/exclude"
+    if [[ ! -e "$dcs/ignore.local" ]]; then
+        touch "$dcs/ignore.local"
+        gitl add "$dcs/ignore.local"
+    fi
+    while IFS= read -rd '' localfile; do
+        # FIXME: Handle filenames with * ? and newlines in them.
+        printf '/%s\n' "$localfile"
+    done < <(gitl ls-files --full-name -z "$workdir") >>"$dcs/git.global/info/exclude"
+}; updateRepos
+
+
+# Run dcs action.
+action=${1:-status}; shift
+case $action in
+    st|status)
+        [[ $1 = -a ]] && all=1 && shift
+
+        inf '%s:' "$branch_global"
+        if (( all )); then
+            gitg ls-files "$@"
+        else
+            gitg status -s "$@"
+        fi
+
+        inf '%s:' "$branch_local"
+        if (( all )); then
+            gitl ls-files "$@"
+        else
+            gitl status -s --untracked=no "$@"
+        fi
+        ;;
+
+    u|unstage)
+        while IFS= read -rd ''; do
+            gitg rm --cached "$REPLY"
+        done < <(gitg ls-files -z "$@")
+        while IFS= read -rd ''; do
+            gitl rm --cached "$REPLY"
+        done < <(gitl ls-files -z "$@")
+        ;;
+
+    g|global|l|local|G|globalize|L|localize)
+        repo_global
+        [[ $action = [lL]* ]] && repo_local
+        [[ $action = [GL] || $action = *ize ]] && move=1 || move=0
+
+        files=()
+        while IFS= read -rd ''; do
+            if (( move )) || ! ogithas "$REPLY"; then
+                files+=( "$REPLY" )
+            fi
+        done < <(
+            if (( move )); then
+                ogit ls-files --exclude-standard -z "$@"
+            else
+                git ls-files --exclude-standard -o -z "$@"
+            fi
+        )
+        (( ${#files[@]} )) || ftl 'No files eligible.' || exit
+
+        if (( move )); then
+            inf 'Moving to %s:' "$repo_branch"
+            printf '%s\n' "${files[@]}"
+            ogit rm --cached -q "${files[@]}"
+            updateRepos
+        else
+            inf 'Adding to %s:' "$repo_branch"
+            printf '%s\n' "${files[@]}"
+        fi
+
+        git add "${files[@]}"
+        ;;
+
+    d|down|pull)
+        if [[ $(gitg remote show) = origin ]]; then
+            inf 'Pulling %s...' "$branch_global"
+            gitg pull origin "$branch_global"
+        fi
+        if [[ $(gitl remote show) = origin ]]; then
+            inf 'Pulling %s...' "$branch_local"
+            gitl pull origin "$branch_local"
+        fi
+        ;;
+
+    u|up|push)
+        gitg commit -m "dcs global commit"
+        gitl commit -m "dcs local commit" --untracked-files=no
+
+        if [[ $(gitg remote show) = origin ]]; then
+            inf 'Pushing %s...' "$branch_global"
+            gitg push origin "$branch_global"
+        fi
+        if [[ $(gitl remote show) = origin ]]; then
+            inf 'Pushing %s...' "$branch_local"
+            gitl push origin "$branch_local"
+        fi
+        ;;
+
+    r|remote)
+        if [[ $1 = -l ]]; then
+            repo_local
+            shift
+
+        elif [[ $1 = -g ]]; then
+            repo_global
+            shift
+
+        else
+            if [[ $(ask -c Gl 'Use this remote for the %slobal or %socal repository?' g l) = G ]]; then
+                repo_global
+            else
+                repo_local
+            fi
+        fi
+
+        if [[ $(git remote show) = origin ]]; then
+            git remote set-url origin "$@"
+        else
+            git remote add origin "$@"
+            git branch -u "$repo_branch" "origin/$repo_branch"
+        fi
+        ;;
+
+    *)
+        ftl 'Unrecognized action: %s' "$action"
+        exit 1
+        ;;
+esac
