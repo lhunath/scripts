@@ -4,11 +4,17 @@ source bashlib
 
 # Utilities.
 gitg() {
+    [[ -e "$dcs/git.global" ]] || ftl 'Missing global DCS repository at %s' "$dcs" || exit
+    (( ! $# )) && return
+
     GIT_DIR="$dcs/git.global" \
     GIT_WORK_TREE="$workdir" \
     command git "$@"
 }
 gitl() {
+    [[ -e "$dcs/git.local" ]] || ftl 'Missing local DCS repository at %s' "$dcs" || exit
+    (( ! $# )) && return
+
     GIT_DIR="$dcs/git.local" \
     GIT_ALTERNATE_OBJECT_DIRECTORIES="$dcs/git.global/objects" \
     GIT_WORK_TREE="$workdir" \
@@ -32,37 +38,19 @@ githas() {
 ogithas() {
     ogit ls-files --error-unmatch "$@" >/dev/null 2>&1
 }
-
-
-# Initialize our working directory.
-workdir=$(
-    default=$PWD
-    until [[ -e .dcs.d || $PWD = / ]]; do cd ..; done
-    [[ -e .dcs.d ]] && echo "$PWD" || echo "$default"
-)
-dcs=$workdir/.dcs.d
-if [[ ! -e "$dcs" ]]; then
-    [[ $(ask -c Ny 'Initialize DCS in %s?' "$workdir") = y ]] || exit
-    mkdir -p "$dcs"
-fi
-branch_global=global/master
-branch_local=local/${HOSTNAME%%.*}
-if [[ ! -e "$dcs/git.global" ]]; then
-    command git init --bare "$dcs/git.global"
-    echo "ref: refs/heads/$branch_global" > "$dcs/git.global/HEAD"
-elif [[ $(gitg symbolic-ref --short HEAD) != $branch_global ]]; then
-    gitg checkout -B "$branch_global"
-fi
-if [[ ! -e "$dcs/git.local" ]]; then
-    command git init --bare "$dcs/git.local"
-    echo "ref: refs/heads/$branch_local" > "$dcs/git.local/HEAD"
-elif [[ $(gitl symbolic-ref --short HEAD) != $branch_local ]]; then
-    gitl checkout -B "$branch_local"
-fi
-
-
-# Update global and local exclusion patterns.
 updateRepos() {
+    # Ensure both repos are available
+    gitg && gitl
+
+    # Ensure we're on the right branch
+    if [[ $(gitg symbolic-ref --short HEAD) != $branch_global ]]; then
+        gitg checkout -B "$branch_global"
+    fi
+    if [[ $(gitl symbolic-ref --short HEAD) != $branch_local ]]; then
+        gitl checkout -B "$branch_local"
+    fi
+
+    # Ensure the ignores are up-to-date
     if [[ ! -e "$dcs/ignore.global" ]]; then
         echo "/.dcs.d/git.*"           >"$dcs/ignore.global"
         gitg add "$dcs/ignore.global"
@@ -74,18 +62,48 @@ updateRepos() {
         touch "$dcs/ignore.local"
         gitl add "$dcs/ignore.local"
     fi
-    while IFS= read -rd '' localfile; do
+    while IFS= read -u3 -rd '' localfile; do
         # FIXME: Handle filenames with * ? and newlines in them.
         printf '/%s\n' "$localfile"
-    done < <(gitl ls-files --full-name -z "$workdir") >>"$dcs/git.global/info/exclude"
-}; updateRepos
+    done 3< <(gitl ls-files --full-name -z "$workdir") >>"$dcs/git.global/info/exclude"
+}
+
+
+# Initialize our working directory.
+workdir=$(
+    default=$PWD
+    until [[ -e .dcs.d || $PWD = / ]]; do cd ..; done
+    [[ -e .dcs.d ]] && echo "$PWD" || echo "$default"
+)
+dcs=$workdir/.dcs.d
+branch_global=global/master
+branch_local=local/${HOSTNAME%%.*}
 
 
 # Run dcs action.
 action=${1:-status}; shift
 case $action in
+    init)
+        workdir=$PWD
+        dcs=$workdir/.dcs.d
+        if [[ ! -e "$dcs" ]]; then
+            [[ $(ask -c Ny 'Initialize DCS in %s?' "$workdir") = y ]] || exit
+            mkdir -p "$dcs"
+        fi
+        if [[ ! -e "$dcs/git.global" ]]; then
+            command git init --bare "$dcs/git.global"
+            echo "ref: refs/heads/$branch_global" > "$dcs/git.global/HEAD"
+        fi
+        if [[ ! -e "$dcs/git.local" ]]; then
+            command git init --bare "$dcs/git.local"
+            echo "ref: refs/heads/$branch_local" > "$dcs/git.local/HEAD"
+        fi
+        updateRepos
+
+        ;;
     st|status)
         [[ $1 = -a ]] && all=1 && shift
+        updateRepos
 
         inf '%s:' "$branch_global"
         if (( all )); then
@@ -102,26 +120,61 @@ case $action in
         fi
         ;;
 
+    s|stage)
+        stageFiles() {
+            inf 'Interactively staging:'
+            gitg ls-files --exclude-standard --directory --no-empty-directory -o "$@"
+
+            while IFS= read -u3 -rd ''; do
+                while true; do
+                    read size _ < <(du -xsh "$REPLY")
+                    count=$(gitg ls-files --exclude-standard --directory --no-empty-directory -o "$REPLY" | wc -l)
+                    (( count == 1 )) && countSuffix= || countSuffix=s
+                    stageAction=$(ask -c gliSec '%s [%s, %d %s] - stage %slobal, %socal, %sgnore, %skip, %snter, show %sontents?' \
+                                    "$REPLY" "$size" "$count" "file$countSuffix" g l i s e c)
+                    case $stageAction in
+                        g) gitg add "$REPLY" && break ;;
+                        l) gitl add "$REPLY" && break ;;
+                        i) gitg ls-files --full-name --directory -o -z "$REPLY" >> "$dcs/ignore.global" && break ;;
+                        S) break ;;
+                        e) [[ -d "$REPLY" ]] && stageFiles "$REPLY" && break ;;
+                        c) if [[ -d "$REPLY" ]]; then
+                                gitg ls-files -o "$REPLY" | "${PAGER:-less}"
+                           else
+                                "${PAGER:-less}" "$REPLY"
+                           fi ;;
+                    esac
+                done
+            done 3< <(gitg ls-files --exclude-standard --directory --no-empty-directory -o -z "$@")
+        }
+
+        updateRepos
+        stageFiles "$@"
+        ;;
+
     u|unstage)
-        while IFS= read -rd ''; do
+        updateRepos
+
+        while IFS= read -u3 -rd ''; do
             gitg rm --cached "$REPLY"
-        done < <(gitg ls-files -z "$@")
-        while IFS= read -rd ''; do
+        done 3< <(gitg ls-files -z "$@")
+        while IFS= read -u3 -rd ''; do
             gitl rm --cached "$REPLY"
-        done < <(gitl ls-files -z "$@")
+        done 3< <(gitl ls-files -z "$@")
         ;;
 
     g|global|l|local|G|globalize|L|localize)
+        updateRepos
         repo_global
         [[ $action = [lL]* ]] && repo_local
         [[ $action = [GL] || $action = *ize ]] && move=1 || move=0
 
         files=()
-        while IFS= read -rd ''; do
+        while IFS= read -u3 -rd ''; do
             if (( move )) || ! ogithas "$REPLY"; then
                 files+=( "$REPLY" )
             fi
-        done < <(
+        done 3< <(
             if (( move )); then
                 ogit ls-files --exclude-standard -z "$@"
             else
@@ -144,6 +197,8 @@ case $action in
         ;;
 
     d|down|pull)
+        updateRepos
+
         if [[ $(gitg remote show) = origin ]]; then
             inf 'Pulling %s...' "$branch_global"
             gitg pull origin "$branch_global"
@@ -155,6 +210,7 @@ case $action in
         ;;
 
     u|up|push)
+        updateRepos
         gitg commit -m "dcs global commit"
         gitl commit -m "dcs local commit" --untracked-files=no
 
@@ -169,6 +225,7 @@ case $action in
         ;;
 
     r|remote)
+        updateRepos
         if [[ $1 = -l ]]; then
             repo_local
             shift
