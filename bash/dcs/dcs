@@ -3,13 +3,20 @@ source bashlib
 
 
 # Utilities.
+maxargs() {
+    if [[ ${@: -1} == -- ]]; then
+        xargs -0 "${@:1:$#-1}"
+    else
+        "$@"
+    fi
+}
 gitg() {
     [[ -e "$dcs/git.global" ]] || ftl 'Missing global DCS repository at %s' "$dcs" || exit
     (( ! $# )) && return
 
     GIT_DIR="$dcs/git.global" \
     GIT_WORK_TREE="$workdir" \
-    command git "$@"
+    maxargs git "$@"
 }
 gitl() {
     [[ -e "$dcs/git.local" ]] || ftl 'Missing local DCS repository at %s' "$dcs" || exit
@@ -18,7 +25,7 @@ gitl() {
     GIT_DIR="$dcs/git.local" \
     GIT_ALTERNATE_OBJECT_DIRECTORIES="$dcs/git.global/objects" \
     GIT_WORK_TREE="$workdir" \
-    command git "$@"
+    maxargs git "$@"
 }
 repo_local() {
     repo_git=gitl repo_other_git=gitg repo_branch=$branch_local
@@ -26,14 +33,14 @@ repo_local() {
 repo_global() {
     repo_git=gitg repo_other_git=gitl repo_branch=$branch_global
 }
-git() {
+rgit() {
     "$repo_git" "$@"
 }
 ogit() {
     "$repo_other_git" "$@"
 }
-githas() {
-    git ls-files --error-unmatch "$@" >/dev/null 2>&1
+rgithas() {
+    rgit ls-files --error-unmatch "$@" >/dev/null 2>&1
 }
 ogithas() {
     ogit ls-files --error-unmatch "$@" >/dev/null 2>&1
@@ -91,11 +98,11 @@ case $action in
             mkdir -p "$dcs"
         fi
         if [[ ! -e "$dcs/git.global" ]]; then
-            command git init --bare "$dcs/git.global"
+            git init --bare "$dcs/git.global"
             echo "ref: refs/heads/$branch_global" > "$dcs/git.global/HEAD"
         fi
         if [[ ! -e "$dcs/git.local" ]]; then
-            command git init --bare "$dcs/git.local"
+            git init --bare "$dcs/git.local"
             echo "ref: refs/heads/$branch_local" > "$dcs/git.local/HEAD"
         fi
         updateRepos
@@ -178,7 +185,7 @@ case $action in
             if (( move )); then
                 ogit ls-files --exclude-standard -z "$@"
             else
-                git ls-files --exclude-standard -o -z "$@"
+                rgit ls-files --exclude-standard -o -z "$@"
             fi
         )
         (( ${#files[@]} )) || ftl 'No files eligible.' || exit
@@ -186,14 +193,14 @@ case $action in
         if (( move )); then
             inf 'Moving to %s:' "$repo_branch"
             printf '%s\n' "${files[@]}"
-            ogit rm --cached -q "${files[@]}"
+            printf '%s\0' "${files[@]}" | ogit rm --cached -q --
             updateRepos
         else
             inf 'Adding to %s:' "$repo_branch"
             printf '%s\n' "${files[@]}"
         fi
 
-        git add "${files[@]}"
+        printf '%s\0' "${files[@]}" | rgit add --
         ;;
 
     d|down|pull)
@@ -242,11 +249,11 @@ case $action in
             fi
         fi
 
-        if [[ $(git remote show) = origin ]]; then
-            git remote set-url origin "$@"
+        if [[ $(rgit remote show) = origin ]]; then
+            rgit remote set-url origin "$@"
         else
-            git remote add origin "$@"
-            git branch -u "$repo_branch" "origin/$repo_branch"
+            rgit remote add origin "$@"
+            rgit branch -u "$repo_branch" "origin/$repo_branch"
         fi
         ;;
 
