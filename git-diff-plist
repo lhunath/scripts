@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+PlistBuddy -x -c Print ${1+"$1"} | python -c '
+import plistlib
+import sys
+
+try:
+    plistlib.writePlist(plistlib.readPlist(sys.stdin), sys.stdout)
+    sys.stdout.flush()
+except IOError:
+    pass
+' | PlistBuddy -c Print -
