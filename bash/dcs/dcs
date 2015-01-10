@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 source bashlib
+_logAttributes=$under
 
 
 # Utilities.
@@ -11,19 +12,19 @@ maxargs() {
     fi
 }
 gitg() {
-    [[ -e "$dcs/git.global" ]] || ftl 'Missing global DCS repository at %s' "$dcs" || exit
+    [[ -e "$dcs/global.git" ]] || ftl 'Missing global DCS repository at %s' "$dcs" || exit
     (( ! $# )) && return
 
-    GIT_DIR="$dcs/git.global" \
+    GIT_DIR="$dcs/global.git" \
     GIT_WORK_TREE="$workdir" \
     maxargs git "$@"
 }
 gitl() {
-    [[ -e "$dcs/git.local" ]] || ftl 'Missing local DCS repository at %s' "$dcs" || exit
+    [[ -e "$dcs/local.git" ]] || ftl 'Missing local DCS repository at %s' "$dcs" || exit
     (( ! $# )) && return
 
-    GIT_DIR="$dcs/git.local" \
-    GIT_ALTERNATE_OBJECT_DIRECTORIES="$dcs/git.global/objects" \
+    GIT_DIR="$dcs/local.git" \
+    GIT_ALTERNATE_OBJECT_DIRECTORIES="$dcs/global.git/objects" \
     GIT_WORK_TREE="$workdir" \
     maxargs git "$@"
 }
@@ -58,21 +59,54 @@ updateRepos() {
     fi
 
     # Ensure the ignores are up-to-date
-    if [[ ! -e "$dcs/ignore.global" ]]; then
-        echo "/.dcs.d/git.*"           >"$dcs/ignore.global"
-        gitg add "$dcs/ignore.global"
+    if [[ ! -e "$dcs/global.ignore" ]]; then
+        echo "/.dcs.d/*.git"           >"$dcs/global.ignore"
+        chmod 0600 "$dcs/global.ignore"
+        gitg add "$dcs/global.ignore"
     fi
-    ignored=$(cat "$dcs/ignore.global"  "$dcs/ignore.local"   2>/dev/null)
-    printf '%s\n' "$ignored"           >"$dcs/git.local/info/exclude"
-    printf '%s\n' "$ignored"           >"$dcs/git.global/info/exclude"
-    if [[ ! -e "$dcs/ignore.local" ]]; then
-        touch "$dcs/ignore.local"
-        gitl add "$dcs/ignore.local"
+    ignored=$(cat "$dcs/global.ignore"  "$dcs/local.ignore"   2>/dev/null)
+    printf '%s\n' "$ignored"           >"$dcs/local.git/info/exclude"
+    printf '%s\n' "$ignored"           >"$dcs/global.git/info/exclude"
+    if [[ ! -e "$dcs/local.ignore" ]]; then
+        touch "$dcs/local.ignore"
+        chmod 0600 "$dcs/local.ignore"
+        gitl add "$dcs/local.ignore"
     fi
     while IFS= read -u3 -rd '' localfile; do
         # FIXME: Handle filenames with * ? and newlines in them.
         printf '/%s\n' "$localfile"
-    done 3< <(gitl ls-files --full-name -z "$workdir") >>"$dcs/git.global/info/exclude"
+    done 3< <(gitl ls-files --full-name -z "$workdir") >>"$dcs/global.git/info/exclude"
+}
+exportStats() {
+    perl -0ne '
+        sub nameForUID {
+            my $uid = shift, $name = $nameForUID{$uid};
+            if (! defined $name) {
+                $nameForUID{$uid} = $name = scalar getpwuid($uid)
+            }
+
+            return defined $name? $name: $uid;
+        }
+        sub nameForGID {
+            my $gid = shift, $name = $nameForGID{$gid};
+            if (! defined $name) {
+                $nameForGID{$gid} = $name = scalar getgrgid($gid)
+            }
+
+            return defined $name? $name: $gid;
+        }
+
+        chomp;
+        my (undef, undef, $mode, undef, $uid, $gid) = stat($_);
+        printf "%04o\t%s\t%s\t%s\0", $mode & 07777, nameForUID($uid), nameForGID($gid), $_;'
+}
+importStats() {
+    while IFS=$'\t' read -rd '' mode user group rest; do
+        IFS=$'\t' read -rd '' -a rest <<< "$rest"
+        file=${rest[@]: -1}
+        chmod -hvv "$mode" "$file"
+        chown -h "$user:$group" "$file" || chown -h ":$group" "$file"
+    done 2>/dev/null
 }
 
 
@@ -88,26 +122,76 @@ branch_local=local/${HOSTNAME%%.*}
 
 
 # Run dcs action.
-action=${1:-status}; shift
+action=${1:-help}; shift
 case $action in
-    init)
+    h|help)
+        printf 'Usage: dcs action ...\n\n'
+        printf 'DCS is the Document Control System.\n'
+        printf 'It tracks documents using a global repository overlayed by a local.\n\n'
+        printf 'Actions:\n'
+        printf '    %si|init%s\n' "$under" "$reset"
+        printf '        Initialize a new dcs repository in the current working directory.\n\n'
+        printf '    %signore%s %s-p%s [files...]\n' "$under" "$reset" "$under" "$reset"
+        printf '        Ignore documents that match a pattern.\n'
+        printf '        If no patterns are given, opens the global ignore file in your editor.\n'
+        printf '            %s-p%s      Treat the arguments as git ignore patterns instead.\n\n' "$under" "$reset"
+        printf '    %sst|status%s [files...]\n' "$under" "$reset"
+        printf '        Show the repository status of the tracked and untracked documents.\n\n'
+        printf '    %ssize%s %s-h%s [files...]\n' "$under" "$reset" "$under" "$reset"
+        printf '        Show the size of tracked files.\n'
+        printf '            %s-h%s      Show human-readable sizes using SI units.\n\n' "$under" "$reset"
+        printf '    %ss|stage%s [files...]\n' "$under" "$reset"
+        printf '        Interactively stage untracked documents to the global or local repository.\n\n'
+        printf '    %su|unstage%s files...\n' "$under" "$reset"
+        printf '        Remove tracked documents from the dcs repository.\n'
+        printf '        The documents themselves are not deleted.\n\n'
+        printf '    %sg|global|l|local%s [files...]\n' "$under" "$reset"
+        printf '        Stage the documents to the global or local repository.\n\n'
+        printf '    %sG|globalize|L|localize%s [files...]\n' "$under" "$reset"
+        printf '        Move the documents from the global to the local repository or vice-versa.\n\n'
+        printf '    %sd|down|pull%s\n' "$under" "$reset"
+        printf '        Download updates from the remote repository.\n\n'
+        printf '    %su|up|push%s\n' "$under" "$reset"
+        printf '        Upload changes to the remote repository.\n\n'
+        printf '    %sr|remote%s [url]\n' "$under" "$reset"
+        printf '        Set or change the URL to the remote repository.\n\n'
+        printf '    %sgitg|gitl%s [git command]\n' "$under" "$reset"
+        printf '        Run the git command in the global or local repository.\n\n'
+        ;;
+
+    i|init)
         workdir=$PWD
         dcs=$workdir/.dcs.d
         if [[ ! -e "$dcs" ]]; then
             [[ $(ask -c Ny 'Initialize DCS in %s?' "$workdir") = y ]] || exit
             mkdir -p "$dcs"
         fi
-        if [[ ! -e "$dcs/git.global" ]]; then
-            git init --bare "$dcs/git.global"
-            echo "ref: refs/heads/$branch_global" > "$dcs/git.global/HEAD"
+        if [[ ! -e "$dcs/global.git" ]]; then
+            git init --shared=0600 --bare "$dcs/global.git"
+            echo "ref: refs/heads/$branch_global" > "$dcs/global.git/HEAD"
         fi
-        if [[ ! -e "$dcs/git.local" ]]; then
-            git init --bare "$dcs/git.local"
-            echo "ref: refs/heads/$branch_local" > "$dcs/git.local/HEAD"
+        if [[ ! -e "$dcs/local.git" ]]; then
+            git init --shared=0600 --bare "$dcs/local.git"
+            echo "ref: refs/heads/$branch_local" > "$dcs/local.git/HEAD"
         fi
         updateRepos
-
         ;;
+
+    ignore)
+        updateRepos
+        mode=file
+        [[ $1 = -p ]] && mode=pattern && shift
+
+        if (( $# )); then
+            case $mode in
+                pattern) printf '%s\n' "$@" ;;
+                file) printf '/%s\n' "$(gitg ls-files --exclude-standard --full-name --directory --no-empty-directory -o "${@/%\//}")" ;;
+            esac >> "$dcs/global.ignore"
+        else
+            "${EDITOR:-vi}" "$dcs/global.ignore"
+        fi
+        ;;
+
     st|status)
         [[ $1 = -a ]] && all=1 && shift
         updateRepos
@@ -127,32 +211,68 @@ case $action in
         fi
         ;;
 
+    size)
+        format=bytes
+        [[ $1 = -h ]] && format=human && shift
+
+        while IFS= read -u3 -rd '' file; do
+            (( size=$({ wc -c < "$file" || echo 0; } 2>/dev/null), total+=size ))
+
+            case $format in
+                bytes) printf '%10d %s\n' "$size" "$file" ;;
+                human) printf '%4sB %s\n' "$(si "$size")" "$file" ;;
+            esac
+        done 3< <(gitg ls-files --exclude-standard -z "$@")
+
+        case $format in
+            bytes) printf '%10d total\n' "$total" ;;
+            human) printf '%4sB total\n' "$(si "$total")" ;;
+        esac
+        ;;
+
     s|stage)
         stageFiles() {
-            inf 'Interactively staging:'
-            gitg ls-files --exclude-standard --directory --no-empty-directory -o "$@"
+            local f file files=() size siSize index count countSuffix stageAction
+            declare -A fileSize
 
-            while IFS= read -u3 -rd ''; do
+            pinf 'Interactively staging'
+            while IFS= read -u3 -rd '' file; do
+                kB=$(gitg ls-files --exclude-standard -o -z "$file" | xargs -0 du -xk | awk '{t+=$1}END{print t}')
+                siSize=$(si "$((kB * 1000))")B
+                fileSize["$file"]=$siSize
+                for (( index = 1000000000000 - kB;; ++index )); do
+                    [[ -z ${files[index]} ]] && files[index]=$file && break
+                done
+                uinf '%s (%s)' "$file" "$siSize"
+            done 3< <(gitg ls-files --exclude-standard --directory --no-empty-directory -o -z "$@")
+            files=( "${files[@]}" )
+            fnip
+            for file in "${files[@]}"; do
+                printf '[%5s] %s\n' "${fileSize[$file]}" "$file"
+            done
+
+            for f in "${!files[@]}"; do
+                file=${files[f]}
                 while true; do
-                    read size _ < <(du -xsh "$REPLY")
-                    count=$(gitg ls-files --exclude-standard --directory --no-empty-directory -o "$REPLY" | wc -l)
+                    count=$(gitg ls-files --exclude-standard --directory --no-empty-directory -o "$file" | wc -l)
                     (( count == 1 )) && countSuffix= || countSuffix=s
-                    stageAction=$(ask -c gliSec '%s [%s, %d %s] - stage %slobal, %socal, %sgnore, %skip, %snter, show %sontents?' \
-                                    "$REPLY" "$size" "$count" "file$countSuffix" g l i s e c)
+                    stageAction=$(ask -c gliSevx '%s [%d/%d, %s, %d %s] - stage %slobal, %socal, %sgnore, %skip, %snter, %siew, e%sit?' \
+                                    "$file" "$((f+1))" "${#files[@]}" "${fileSize[$file]}" "$count" "file$countSuffix" g l i s e v x)
                     case $stageAction in
-                        g) gitg add "$REPLY" && break ;;
-                        l) gitl add "$REPLY" && break ;;
-                        i) gitg ls-files --full-name --directory -o -z "$REPLY" >> "$dcs/ignore.global" && break ;;
+                        g) gitg add "$file" && break ;;
+                        l) gitl add "$file" && break ;;
+                        i) { printf /; gitg ls-files --full-name --directory -o "${file%/}"; } >> "$dcs/global.ignore" && break ;;
                         S) break ;;
-                        e) [[ -d "$REPLY" ]] && stageFiles "$REPLY" && break ;;
-                        c) if [[ -d "$REPLY" ]]; then
-                                gitg ls-files -o "$REPLY" | "${PAGER:-less}"
+                        e) [[ -d "$file" ]] && stageFiles "$file" && break ;;
+                        x) return 1 ;;
+                        v) if hash view 2>/dev/null; then
+                                view "$file"
                            else
-                                "${PAGER:-less}" "$REPLY"
+                                "${PAGER:-less}" "$file"
                            fi ;;
                     esac
                 done
-            done 3< <(gitg ls-files --exclude-standard --directory --no-empty-directory -o -z "$@")
+            done
         }
 
         updateRepos
@@ -208,18 +328,41 @@ case $action in
 
         if [[ $(gitg remote show) = origin ]]; then
             inf 'Pulling %s...' "$branch_global"
-            gitg pull origin "$branch_global"
+            gitg fetch origin "$branch_global"
+            gitg reset origin/"$branch_global" && gitg merge origin/"$branch_global"
+        else
+            gitg reset --merge "$branch_global"
         fi
         if [[ $(gitl remote show) = origin ]]; then
             inf 'Pulling %s...' "$branch_local"
-            gitl pull origin "$branch_local"
+            gitl fetch origin "$branch_local"
+            gitl reset origin/"$branch_local" && gitl merge origin/"$branch_local"
+        else
+            gitl reset --merge "$branch_local"
         fi
+
+        updateRepos
+        pushd "$workdir" >/dev/null || exit
+        [[ -e "$dcs/global.stat" ]] && importStats < "$dcs/global.stat"
+        [[ -e "$dcs/local.stat" ]]  && importStats < "$dcs/local.stat"
+        popd >/dev/null
         ;;
 
     u|up|push)
         updateRepos
-        gitg commit -m "dcs global commit"
-        gitl commit -m "dcs local commit" --untracked-files=no
+
+        pushd "$workdir" >/dev/null || exit
+        [[ ! -e "$dcs/global.stat" ]] && touch "$dcs/global.stat" && chmod 0600 "$dcs/global.stat"
+        [[ ! -e "$dcs/local.stat" ]] && touch "$dcs/local.stat" && chmod 0600 "$dcs/local.stat"
+
+        gitg ls-files -z | exportStats > "$dcs/global.stat"
+        gitg add "$dcs/global.stat"
+        gitg commit -am "dcs global commit"
+
+        gitl ls-files -z | exportStats > "$dcs/local.stat"
+        gitl add "$dcs/local.stat"
+        gitl commit -am "dcs local commit" --untracked-files=no
+        popd >/dev/null
 
         if [[ $(gitg remote show) = origin ]]; then
             inf 'Pushing %s...' "$branch_global"
@@ -255,6 +398,16 @@ case $action in
             rgit remote add origin "$@"
             rgit branch -u "$repo_branch" "origin/$repo_branch"
         fi
+        ;;
+
+    gitg)
+        updateRepos
+        gitg "$@"
+        ;;
+
+    gitl)
+        updateRepos
+        gitl "$@"
         ;;
 
     *)

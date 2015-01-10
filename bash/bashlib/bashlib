@@ -324,6 +324,26 @@ min() {
 
 
 #  ______________________________________________________________________
+# |__ si ________________________________________________________________|
+#
+#       si number
+#
+# Output a human-readable version of the number using SI units.
+#
+si() {
+    local number=$1
+
+    if (( number >= 1000000000000000 )); then printf '%dM' "$((number / 1000000000000000))"
+    elif (( number >= 1000000000000 )); then printf '%dM' "$((number / 1000000000000))"
+    elif (( number >= 1000000000 )); then printf '%dM' "$((number / 1000000000))"
+    elif (( number >= 1000000 )); then printf '%dM' "$((number / 1000000))"
+    elif (( number >= 1000 )); then printf '%dk' "$((number / 1000))"
+    else printf '%d' "$number"; fi
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
 # |__ totime ____________________________________________________________|
 #
 #       totime "YYYY-MM-DD HH:MM:SS.mmm"...
@@ -567,13 +587,12 @@ log() {
                 end=$OPTARG ;;
             n)
                 end= ;;
-            t)
-                date=$(date +"${_logDate:-%H:%M}") ;;
         esac
     done
     shift "$((OPTIND-1))"
     format=$1 args=( "${@:2}" )
     (( ! ${#args[@]} )) && [[ $format ]] && { args=("$format") format=%s; local bold=; }
+    date=${_logDate+$(date +"${_logDate:-%H:%M}")}
 
     # Level-specific settings.
     local logLevelColor
@@ -600,11 +619,11 @@ log() {
     # Generate the log message.
     case $type in
         msg|startProgress)
-            printf -v logMsg "[${date:+%s }%-3s] $format$end" ${date:+"$date"} "$level" "${args[@]}"
+            printf -v logMsg "${date:+%s }${_logLevel:+%-3s }$format$end" ${date:+"$date"} ${_logLevel:+"$level"} "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
-                colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
-                printf -v conMsg "$reset[${date:+%s }$logColor$bold%-3s$reset] $logColor$colorFormat$reset$black\$$reset$end$save" ${date:+"$date"} "$level" "${colorArgs[@]}"
+                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$_logAttributes$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$_logAttributes$bold$logColor&$reset$_logAttributes$logColor/g" <<< "$format")
+                colorArgs=("${args[@]//$reset/$reset$_logAttributes$bold$logColor}")
+                printf -v conMsg "$reset$_logAttributes${date:+%s }${_logLevel:+$logColor$bold%-3s$reset $_logAttributes}$logColor$colorFormat$reset$_logAttributes$black\$$reset$end$save" ${date:+"$date"} ${_logLevel:+"$level"} "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -613,9 +632,9 @@ log() {
         updateProgress)
             printf -v logMsg printf " [$format]" "${args[@]}"
             if (( _logColor )); then
-                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$bold$logColor&$reset$logColor/g" <<< "$format")
-                colorArgs=("${args[@]//$reset/$reset$bold$logColor}")
-                printf -v conMsg "$load$eel$blue$bold[$reset$logColor$colorFormat$reset$blue$bold]$reset$end" "${colorArgs[@]}"
+                colorFormat=$(sed ${reset:+-e "s/$(requote "$reset")/$reset$_logAttributes$logColor/g"} -e "s/%[^a-z]*[a-z]/$reset$_logAttributes$bold$logColor&$reset$_logAttributes$logColor/g" <<< "$format")
+                colorArgs=("${args[@]//$reset/$reset$_logAttributes$bold$logColor}")
+                printf -v conMsg "$load$eel$blue$bold[$reset$_logAttributes$logColor$colorFormat$reset$_logAttributes$blue$bold]$reset$end" "${colorArgs[@]}"
             else
                 conMsg=$logMsg
             fi
@@ -712,6 +731,8 @@ rrep() { level=ERR golp "$@"; }
 ltfp() { level=FTL golp "$@"; }
 _logColor=${_logColor:-$([[ -t 2 ]] && echo 1)} _logVerbosity=2
 _logTrcColor=$grey _logDbgColor=$blue _logInfColor=$white _logWrnColor=$yellow _logErrColor=$red _logFtlColor=$bold$red
+#_logDate=%H:%M # Set this to enable date output in log messages.
+#_logLevel=1 # Set this to enable level output in log messages.
 # _______________________________________________________________________
 
 
@@ -788,10 +809,10 @@ ask() {
             printf '%s' "$muteChar"                                 >&$fd
         done
         REPLY=$reply
+        [[ $options && $REPLY ]] || (( silent )) && printf '\n'     >&$fd
     else
         read -u8 -e ${options:+-n1} ${silent:+-s}
     fi
-    [[ $options && $REPLY ]] || (( silent )) && printf '\n'         >&$fd
 
     # Evaluate the reply.
     while true; do
