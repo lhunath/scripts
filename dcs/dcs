@@ -80,16 +80,20 @@ updateRepos() {
 exportStats() {
     perl -0ne '
         sub nameForUID {
-            my $uid = shift, $name = $nameForUID{$uid};
-            if (! defined $name) {
+            my $uid = shift, $name;
+            if (exists $nameForUID{$uid}) {
+                $name = $nameForUID{$uid};
+            } else {
                 $nameForUID{$uid} = $name = scalar getpwuid($uid)
             }
 
             return defined $name? $name: $uid;
         }
         sub nameForGID {
-            my $gid = shift, $name = $nameForGID{$gid};
-            if (! defined $name) {
+            my $gid = shift, $name;
+            if (exists $nameForGID{$gid}) {
+                $name = $nameForGID{$gid};
+            } else {
                 $nameForGID{$gid} = $name = scalar getgrgid($gid)
             }
 
@@ -98,14 +102,18 @@ exportStats() {
 
         chomp;
         my (undef, undef, $mode, undef, $uid, $gid) = stat($_);
-        printf "%04o\t%s\t%s\t%s\0", $mode & 07777, nameForUID($uid), nameForGID($gid), $_;'
+        printf "%04o\t%d:%s\t%d:%s\t%s\0", $mode & 07777, $uid, nameForUID($uid), $gid, nameForGID($gid), $_;'
 }
 importStats() {
     while IFS=$'\t' read -rd '' mode user group rest; do
         IFS=$'\t' read -rd '' -a rest <<< "$rest"
         file=${rest[@]: -1}
         chmod -hvv "$mode" "$file"
-        chown -h "$user:$group" "$file" || chown -h ":$group" "$file"
+        id "${user#*:}" >/dev/null && user=${user#*:} || user=${user%%:*}
+        chown -h "$user:${group#*:}" "$file" ||
+            chown -h "$user:${group%%:*}" "$file" ||
+            chown -h ":${group#*:}" "$file" ||
+            chown -h ":${group%%:*}" "$file"
     done 2>/dev/null
 }
 
@@ -329,14 +337,14 @@ case $action in
         if [[ $(gitg remote show) = origin ]]; then
             inf 'Pulling %s...' "$branch_global"
             gitg fetch origin "$branch_global"
-            gitg reset origin/"$branch_global" && gitg merge origin/"$branch_global"
+            gitg merge origin/"$branch_global"
         else
             gitg reset --merge "$branch_global"
         fi
         if [[ $(gitl remote show) = origin ]]; then
             inf 'Pulling %s...' "$branch_local"
             gitl fetch origin "$branch_local"
-            gitl reset origin/"$branch_local" && gitl merge origin/"$branch_local"
+            gitl merge origin/"$branch_local"
         else
             gitl reset --merge "$branch_local"
         fi
