@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+#
+# dcs - Share a tree between machines that can potentially have machine-specific files in it.
+#
+# We track files using two GIT repositories: a global and a local one.
+# Usage generally involves staging all files to the global repository while ignoring any
+# files you don't want to share (generally large and temporary files).  Any files with
+# content that's machine specific can be tracked in the local repository instead.
+#
+# You can then set a remote for these repositories that allows you to share the repository
+# with other machines.  Both repositories may use the same remote as their changes are
+# tracked on distinct branches.  Now both machines can sync their changes by doing regular
+# push and pull operations.
+#
+# dcs keeps track of file permissions and ownership and tries to restore these when pulled.
+#
+# TODO:
+#   - Handle dcs down conflict when a new file is already in the workdir but untracked.
+#   - Look into the warning when first setting a repo remote.
 source bashlib
 _logAttributes=$under
 
@@ -60,22 +78,28 @@ updateRepos() {
 
     # Ensure the ignores are up-to-date
     if [[ ! -e "$dcs/global.ignore" ]]; then
-        echo "/.dcs.d/*.git"           >"$dcs/global.ignore"
+        echo '/.dcs.d/*.git' >"$dcs/global.ignore"
         chmod 0600 "$dcs/global.ignore"
         gitg add "$dcs/global.ignore"
     fi
-    ignored=$(cat "$dcs/global.ignore"  "$dcs/local.ignore"   2>/dev/null)
-    printf '%s\n' "$ignored"           >"$dcs/local.git/info/exclude"
-    printf '%s\n' "$ignored"           >"$dcs/global.git/info/exclude"
     if [[ ! -e "$dcs/local.ignore" ]]; then
         touch "$dcs/local.ignore"
         chmod 0600 "$dcs/local.ignore"
         gitl add "$dcs/local.ignore"
     fi
-    while IFS= read -u3 -rd '' localfile; do
-        # FIXME: Handle filenames with * ? and newlines in them.
-        printf '/%s\n' "$localfile"
-    done 3< <(gitl ls-files --full-name -z "$workdir") >>"$dcs/global.git/info/exclude"
+    ignored=$(cat "$dcs/global.ignore" "$dcs/local.ignore" 2>/dev/null)
+    {
+        printf '# This file is auto-generated.  Any modifications will be lost.\n'
+        printf '%s\n' "$ignored"
+    } >"$dcs/local.git/info/exclude"
+    {
+        printf '# This file is auto-generated.  Any modifications will be lost.\n'
+        printf '%s\n' "$ignored"
+        while IFS= read -u3 -rd '' localfile; do
+            # FIXME: Handle filenames with * ? and newlines in them.
+            printf '/%s\n' "$localfile"
+        done 3< <(gitl ls-files --full-name -z "$workdir")
+    } >"$dcs/global.git/info/exclude"
 }
 exportStats() {
     perl -0ne '
@@ -101,7 +125,7 @@ exportStats() {
         }
 
         chomp;
-        my (undef, undef, $mode, undef, $uid, $gid) = stat($_);
+        my (undef, undef, $mode, undef, $uid, $gid) = lstat($_);
         printf "%04o\t%d:%s\t%d:%s\t%s\0", $mode & 07777, $uid, nameForUID($uid), $gid, nameForGID($gid), $_;'
 }
 importStats() {
