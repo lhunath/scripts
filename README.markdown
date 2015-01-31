@@ -78,6 +78,8 @@ I've had a really hard time finding a quality product that did this for me in a 
 - Useful reporting
 - Useful client utilities to interact with the daemon
 
+[![demo of tunmgrd](http://stuff.lhunath.com/tunmgrd-demo.png?)](https://asciinema.org/a/15436)
+
 ## [diagnose](https://github.com/lhunath/scripts/tree/master/diagnose)
 
 `diagnose` is a tool for checking what's going on with your connectivity to the Internet.
