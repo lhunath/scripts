@@ -556,7 +556,7 @@ csvline() {
     local line field quoted=0 delimiter=,
 
     IFS= read -r line || return
-    while read -n1 c; do
+    while IFS= read -rn1 c; do
         case $c in
             \")
                 (( quoted = !quoted ))
