@@ -547,15 +547,21 @@ iterate() (
 #  _______________________________________________________________________
 # |__ CSV ____________________________________________________________|
 #
-#       csv
+#       csv [-d delimiter] [-D line-delimiter]
 #
 # Parse a line of input and write the CSV fields to the CSVLINE array.
 #
 csvline() {
     CSVLINE=()
-    local line field quoted=0 delimiter=,
+    local line field quoted=0 delimiter=, lineDelimiter=$'\n' c
+    local OPTIND=1
+    while getopts :d: arg; do
+        case $arg in
+            d) delimiter=$OPTARG ;;
+        esac
+    done
 
-    IFS= read -r line || return
+    IFS= read -d "$lineDelimiter" -r line || return
     while IFS= read -rn1 c; do
         case $c in
             \")
