@@ -542,6 +542,38 @@ iterate() (
     fi
 ) # _____________________________________________________________________
 
+
+
+#  _______________________________________________________________________
+# |__ CSV ____________________________________________________________|
+#
+#       csv
+#
+# Parse a line of input and write the CSV fields to the CSVLINE array.
+#
+csvline() {
+    CSVLINE=()
+    local line field quoted=0 delimiter=,
+
+    IFS= read -r line || return
+    while read -n1 c; do
+        case $c in
+            \")
+                (( quoted = !quoted ))
+                continue ;;
+            $delimiter)
+                if (( ! quoted )); then
+                    CSVLINE+=( "$field" ) field=
+                    continue
+                fi ;;
+        esac
+        field+=$c
+    done <<< "$line"
+    [[ $field ]] && CSVLINE+=( "$field" ) ||:
+} # _____________________________________________________________________
+
+
+
 #  ______________________________________________________________________
 # |__ Logging ___________________________________________________________|
 #
