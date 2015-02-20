@@ -939,59 +939,59 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local delimitor=$'\n' i isDesired=true isAscending=string_ascends top=0 arrayName= array=
+    local _delimitor=$'\n' _i _j _isDesired=true _isAscending=string_ascends _top=0 _arrayName= _array=
 
     # Parse the options.
     local OPTIND=1
     while getopts :0nrd:f:F:c:C:tT:a: opt; do
         case $opt in
-            0) delimitor=$'\0' ;;
-            d) delimitor=$OPTARG ;;
-            n) isAscending=number_ascends ;;
-            r) isAscending=random_ascends ;;
-            t) isAscending=mtime_ascends ;;
-            f) isDesired=$OPTARG ;;
-            F) isDesired=bash_desired bash_desired_code=$OPTARG ;;
-            c) isAscending=$OPTARG ;;
-            C) isAscending=bash_ascends bash_ascends_code=$OPTARG ;;
-            T) top=$OPTARG ;;
-            a) arrayName=$OPTARG array=$arrayName[@] ;;
+            0) _delimitor=$'\0' ;;
+            d) _delimitor=$OPTARG ;;
+            n) _isAscending=number_ascends ;;
+            r) _isAscending=random_ascends ;;
+            t) _isAscending=mtime_ascends ;;
+            f) _isDesired=$OPTARG ;;
+            F) _isDesired=bash_desired _bash_desired_code=$OPTARG ;;
+            c) _isAscending=$OPTARG ;;
+            C) _isAscending=bash_ascends _bash_ascends_code=$OPTARG ;;
+            T) _top=$OPTARG ;;
+            a) _arrayName=$OPTARG _array=$_arrayName[@] ;;
         esac
     done
     shift "$((OPTIND-1))"
 
     # Get the elements.
-    local elements=() element
-    if [[ $arrayName ]]; then
-        for element in "${!array}"; do
-            "$isDesired" "$element" && elements+=("$element")
+    local _elements=() _element
+    if [[ $_arrayName ]]; then
+        for _element in "${!_array}"; do
+            "$_isDesired" "$_element" && _elements+=("$_element")
         done
     elif (( $# )); then
-        for element; do
-            "$isDesired" "$element" && elements+=("$element")
+        for _element; do
+            "$_isDesired" "$_element" && _elements+=("$_element")
         done
     else
-        while IFS= read -r -d "$delimitor" element; do
-            "$isDesired" "$element" && elements+=("$element")
+        while IFS= read -r -d "$_delimitor" _element; do
+            "$_isDesired" "$_element" && _elements+=("$_element")
         done
     fi
 
     # Iterate in reverse order.
-    for (( i = 1; i < ${#elements[@]}; ++i )); do
-        for (( j = i; j > 0; --j )); do
-            element=${elements[j]}
-            if "$isAscending" "$element" "${elements[j-1]}"; then
-                elements[j]=${elements[j-1]}
-                elements[j-1]=$element
+    for (( _i = 1; _i < ${#_elements[@]}; ++_i )); do
+        for (( _j = i; _j > 0; --_j )); do
+            _element=${_elements[_j]}
+            if "$_isAscending" "$_element" "${_elements[_j-1]}"; then
+                _elements[_j]=${_elements[_j-1]}
+                _elements[_j-1]=$_element
             fi
         done
     done
 
-    (( top )) || top=${#elements[@]}
-    if [[ $array ]]; then
-        declare -ga "$array=($(printf '%q ' "${elements[@]:0:top}"))"
+    (( _top )) || _top=${#_elements[@]}
+    if [[ $_array ]]; then
+        declare -ga "$_array=($(printf '%q ' "${_elements[@]:0:_top}"))"
     else
-        printf "%s${delimitor:-\0}" "${elements[@]:0:top}"
+        printf "%s${_delimitor:-\0}" "${_elements[@]:0:_top}"
     fi
 } # _____________________________________________________________________
 string_ascends()    { [[ $1 < $2 ]]; }
@@ -1002,8 +1002,8 @@ exists_desired()    { [[ -e $1 ]]; }
 line_desired()      { [[ $1 ]]; }
 code_desired()      { line_desired "$1" && ! comment_desired "$1"; }
 comment_desired()   { line_desired "$1" && [[ $1 = @(#|//|/\*)* ]]; }
-bash_desired()      { bash -c "$bash_desired_code" -- "$@"; }
-bash_ascends()      { bash -c "$bash_ascends_code" -- "$@"; }
+bash_desired()      { bash -c "$_bash_desired_code" -- "$@"; }
+bash_ascends()      { bash -c "$_bash_ascends_code" -- "$@"; }
 
 
 #  ______________________________________________________________________
