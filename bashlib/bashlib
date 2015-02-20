@@ -542,6 +542,50 @@ iterate() (
     fi
 ) # _____________________________________________________________________
 
+
+
+#  _______________________________________________________________________
+# |__ csvline ____________________________________________________________|
+#
+#       csvline [-d delimiter] [-D line-delimiter]
+#
+# Parse a CSV record from standard input, storing the fields in the CSVLINE array.
+#
+# By default, a single line of input is read and parsed into comma-delimited fields.
+# Fields can optionally contain double-quoted data, including field delimiters.
+#
+# A different field delimiter can be specified using -d.  You can use -D
+# to change the definition of a "record" (eg. to support NULL-delimited records).
+#
+csvline() {
+    CSVLINE=()
+    local line field quoted=0 delimiter=, lineDelimiter=$'\n' c
+    local OPTIND=1 arg
+    while getopts :d: arg; do
+        case $arg in
+            d) delimiter=$OPTARG ;;
+        esac
+    done
+
+    IFS= read -d "$lineDelimiter" -r line || return
+    while IFS= read -rn1 c; do
+        case $c in
+            \")
+                (( quoted = !quoted ))
+                continue ;;
+            $delimiter)
+                if (( ! quoted )); then
+                    CSVLINE+=( "$field" ) field=
+                    continue
+                fi ;;
+        esac
+        field+=$c
+    done <<< "$line"
+    [[ $field ]] && CSVLINE+=( "$field" ) ||:
+} # _____________________________________________________________________
+
+
+
 #  ______________________________________________________________________
 # |__ Logging ___________________________________________________________|
 #

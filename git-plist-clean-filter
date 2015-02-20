@@ -8,4 +8,4 @@ try:
     sys.stdout.flush()
 except IOError:
     pass
-' | PlistBuddy -c Print -
+'
