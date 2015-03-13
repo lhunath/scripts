@@ -985,7 +985,7 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local _delimitor=$'\n' _i _j _isDesired=true _comparator=string_ascends _comparator_descends= _top=0 _arrayName= _array=
+    local _delimitor=$'\n' _i _j _isDesired=true _comparator=string_ascends _comparator_ascends=1 _top=0 _arrayName= _array=
 
     # Parse the options.
     local OPTIND=1
@@ -1000,7 +1000,7 @@ order() {
             F) _isDesired=bash_desired _bash_desired_code=$OPTARG ;;
             c) _comparator=$OPTARG ;;
             C) _comparator=bash_ascends _bash_ascends_code=$OPTARG ;;
-            r) _comparator_descends=1 ;;
+            r) _comparator_ascends=0 ;;
             T) _top=$OPTARG ;;
             a) _arrayName=$OPTARG _array=$_arrayName[@] ;;
         esac
@@ -1027,7 +1027,8 @@ order() {
     for (( _i = 1; _i < ${#_elements[@]}; ++_i )); do
         for (( _j = _i; _j > 0; --_j )); do
             _element=${_elements[_j]}
-            if "$_comparator" "$_element" "${_elements[_j-1]}"; then
+            if ( (( _comparator_ascends )) && "$_comparator" "$_element" "${_elements[_j-1]}" ) ||
+               ( (( ! _comparator_ascends )) && ! "$_comparator" "$_element" "${_elements[_j-1]}" ); then
                 _elements[_j]=${_elements[_j-1]}
                 _elements[_j-1]=$_element
             fi
