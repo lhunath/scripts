@@ -79,7 +79,7 @@
 #     reverse [-0|-d delimitor] [elements ...] [<<< elements]
 # Reverse the order of the given elements.
 #
-#     order [-0|-d char] [-[cC] isAscending|-n] [-t number] [elements ...] [<<< elements]
+#     order [-0|-d char] [-[cC] comparator|-n] [-t number] [elements ...] [<<< elements]
 # Orders the elements in ascending order.
 #
 #     mutex file
@@ -945,7 +945,7 @@ reverse() {
 #  ______________________________________________________________________
 # |__ Order _____________________________________________________________|
 #
-#       order [-0|-d char] [-[fF] isDesired] [-[cC] isAscending|-n|-r|-t] [-T number] [-a array|elements ...] [<<< elements]
+#       order [-0|-d char] [-[fF] isDesired] [-[cC] comparator|-n|-R|-t] [-r] [-T number] [-a array|elements ...] [<<< elements]
 #
 # Orders the elements in ascending order.
 # Elements are read from command arguments or standard input if no element
@@ -954,21 +954,23 @@ reverse() {
 #
 # By default, the elements will be ordered using lexicographic comparison.
 # If the -n option is given, the elements will be ordered numerically.
-# If the -r option is given, the elements will be ordered randomly.
+# If the -R option is given, the elements will be ordered randomly.
+# If the -t option is given, the elements are ordered by file mtime.
 # If the -f option is given, the command name following it will be used
 # as a filter.
 # If the -c option is given, the command name following it will be used
 # as a comparator.
 # If the -C option is given, the bash code following it will be used
 # as a comparator.
-# If the -t option is given, only the first number results are returned.
+# If the -r option is given, the ordering will be reversed.
+# If the -T option is given, only the first number results are returned.
 # If the -a option is given, the elements in array are ordered instead and
 # array is mutated to contain the result.
 # If number is 0, all results are returned.
 #
 # isDesired is a command name which will get one parameter.  The parameter
 # is an element which will only be included if the command exits successfully.
-# isAscending is a command name which will be executed for each element
+# comparator is a command name which will be executed for each element
 # comparison and will be passed two element arguments.  The command should
 # succeed if the first argument is less than the second argument for the
 # purpose of this sort.
@@ -983,21 +985,22 @@ reverse() {
 order() {
    
     # Initialize the vars.
-    local _delimitor=$'\n' _i _j _isDesired=true _isAscending=string_ascends _top=0 _arrayName= _array=
+    local _delimitor=$'\n' _i _j _isDesired=true _comparator=string_ascends _comparator_descends= _top=0 _arrayName= _array=
 
     # Parse the options.
     local OPTIND=1
-    while getopts :0nrd:f:F:c:C:tT:a: opt; do
+    while getopts :0nrRd:f:F:c:C:tT:a: opt; do
         case $opt in
             0) _delimitor=$'\0' ;;
             d) _delimitor=$OPTARG ;;
-            n) _isAscending=number_ascends ;;
-            r) _isAscending=random_ascends ;;
-            t) _isAscending=mtime_ascends ;;
+            n) _comparator=number_ascends ;;
+            R) _comparator=random_ascends ;;
+            t) _comparator=mtime_ascends ;;
             f) _isDesired=$OPTARG ;;
             F) _isDesired=bash_desired _bash_desired_code=$OPTARG ;;
-            c) _isAscending=$OPTARG ;;
-            C) _isAscending=bash_ascends _bash_ascends_code=$OPTARG ;;
+            c) _comparator=$OPTARG ;;
+            C) _comparator=bash_ascends _bash_ascends_code=$OPTARG ;;
+            r) _comparator_descends=1 ;;
             T) _top=$OPTARG ;;
             a) _arrayName=$OPTARG _array=$_arrayName[@] ;;
         esac
@@ -1022,9 +1025,9 @@ order() {
 
     # Iterate in reverse order.
     for (( _i = 1; _i < ${#_elements[@]}; ++_i )); do
-        for (( _j = i; _j > 0; --_j )); do
+        for (( _j = _i; _j > 0; --_j )); do
             _element=${_elements[_j]}
-            if "$_isAscending" "$_element" "${_elements[_j-1]}"; then
+            if "$_comparator" "$_element" "${_elements[_j-1]}"; then
                 _elements[_j]=${_elements[_j-1]}
                 _elements[_j-1]=$_element
             fi
