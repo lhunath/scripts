@@ -710,7 +710,7 @@ log() {
 
     # Create the log file.
     if [[ $_logFile && ! -e $_logFile ]]; then
-        [[ $_logFile = */* ]] || $_logFile=./$logFile
+        [[ $_logFile = */* ]] || _logFile=./$_logFile
         mkdir -p "${_logFile%/*}" && touch "$_logFile"
     fi
 
