@@ -35,7 +35,7 @@ source "$HOME/.tunmgrd.conf"
 _logFile=$logDir/tunmgrd.log
 _logColor=$logColor
 for ((t=0; t < ${#config[@]}; ++t)); do
-    read addresses[t] options[t] tunnels[t] <<< "${config[t]}"
+    read urls[t] modifiers[t] configs[t] <<< "${config[t]}"
 done
 
 
@@ -45,8 +45,8 @@ inf '\t- PID:           %d' "$$"
 inf '\t- Logging to:    %s' "$logDir"
 inf
 inf "Tunnels:"
-for t in "${!addresses[@]}"; do
-    inf '\t- [%s]%s (%s)' "${options[t]}" "${addresses[t]}" "${tunnels[t]}"
+for t in "${!urls[@]}"; do
+    inf '\t- [%s]%s (%s)' "${modifiers[t]}" "${urls[t]}" "${configs[t]}"
 done
 
 
@@ -72,6 +72,9 @@ showStatus() {
         printf "[%s:%s] [%s]%s\n" "$t" "$tstate" "${type[t]}" "${name[t]}"
     done
 }
+shutdown() {
+    kill "${pid[@]}" 2>/dev/null
+}
 
 
 # Run loop
@@ -81,10 +84,16 @@ trap shutdown EXIT
 while true; do
 
     # Manage our tunnels.
-    for t in "${!addresses[@]}"; do
-        IFS=: read host port _ <<< "${addresses[t]}:22"
+    for t in "${!urls[@]}"; do
+        IFS=: read host port _ <<< "${urls[t]#*://}"
+        schema=${urls[t]%%://*}
+        case "$schema" in
+            ssh) port=${port:-22} ;;
+            http) port=${port:-80} ;;
+            https) port=${port:-443} ;;
+        esac
 
-        # Can we get a response over the connection?
+        # Can we get a response over the connection? -> up
         if [[ ${out[t]} ]] && {
             read -d ''
             for tries in {1..3}; do
@@ -94,72 +103,87 @@ while true; do
         } < "${out[t]}"; then
             [[ ${state[t]} != up ]] && {
                 state[t]=up
-                inf 'Connection Up: %s' "${addresses[t]}"
+                inf 'Connection Up: %s' "${urls[t]}"
             }
             continue
         fi
 
-        # Is the process alive?
+        # No response received - Is the process alive? -> lag
         if kill -0 "${pid[t]}" 2>/dev/null; then
             [[ ${state[t]} != @(conn|lag) ]] && {
                 state[t]=lag
-                wrn 'Connection Lagging: %s' "${addresses[t]}"
+                wrn 'Connection Lagging: %s' "${urls[t]}"
             }
             continue
         fi
 
-        # Connection unavailable and no live ssh client for it.
+        # Process disappeared. -> down
         [[ ${state[t]} != @(n/a|down|) ]] && {
             state[t]=down
-            perr 'Connection Lost: %s' "${addresses[t]}"
+            perr 'Connection Lost: %s' "${urls[t]}"
                 wait "${pid[t]}" 2>/dev/null
             rrep '%d: %s' "$?" "$(< "${err[t]}")"
         }
         unset 'pid[t]'
 
 
-        # Host unavailable?
+        # No process, check service availability. -> unavailable
         if ! nc -z "$host" "$port" &>/dev/null; then
             [[ ${state[t]} != n/a ]] && {
-                wrn 'Connection Unavailable: %s' "${addresses[t]}"
+                wrn 'Connection Unavailable: %s - %s:%d' "${urls[t]}" "$host" "$port"
                 state[t]=n/a
             }
             continue
         fi
 
-        # Open the tunnel
-        inf 'Connection Opening: %s' "${addresses[t]}"
-        arguments=()
-        if [[ ${options[t]} = *M* ]]; then
-            arguments+=( -M )
-        fi
-        read -r -a ctunnels <<< "${tunnels[t]}"
-        for ctunnel in "${ctunnels[@]}"; do
-            IFS=: read side ports <<< "$ctunnel"
-            saddress=${ports%%->*}
-            daddress=${ports#*->}
-            IFS=: read shost sport <<< "$saddress"
-            IFS=: read dhost dport <<< "$daddress"
-            [[ $sport ]] || sport=$shost shost=localhost
-            [[ $dport ]] || dport=$dhost dhost=localhost
-            case $side in
-                LOCAL)  arguments+=( -L "$shost:$sport:$dhost:$dport" ) ;;
-                REMOTE) arguments+=( -R "$shost:$sport:$dhost:$dport" ) ;;
-            esac
-        done
-
-        # Launch the SSH client which sets up the actual connection.
+        # Service available, open a connection. -> connecting
+        inf 'Connection Opening: %s' "${urls[t]}"
         out[t]=$logDir/tunmgrd.tun$t.out
         err[t]=$logDir/tunmgrd.tun$t.err
-        ssh -n >"${out[t]}" 2> >(tr -d '\r' > "${err[t]}") \
-            -o "BatchMode yes" \
-            -o "ExitOnForwardFailure yes" \
-            -o "ServerAliveCountMax 3" \
-            -o "ServerAliveInterval 5" \
-            -p "$port" \
-            "${arguments[@]}" "$host" 'while sleep 1; do printf .; done' &
-        state[t]=conn pid[t]=$!
 
+        arguments=()
+        if [[ ${modifiers[t]} = *M* ]]; then
+            arguments+=( -M )
+        fi
+        read -r -a cconfigs <<< "${configs[t]}"
+
+        case "$schema" in
+            ssh)
+                for cconfig in "${cconfigs[@]}"; do
+                    IFS=: read side ports <<< "$cconfig"
+                    saddress=${ports%%->*}
+                    daddress=${ports#*->}
+                    IFS=: read shost sport <<< "$saddress"
+                    IFS=: read dhost dport <<< "$daddress"
+                    [[ $sport ]] || sport=$shost shost=localhost
+                    [[ $dport ]] || dport=$dhost dhost=localhost
+                    case $side in
+                        LOCAL)  arguments+=( -L "$shost:$sport:$dhost:$dport" ) ;;
+                        REMOTE) arguments+=( -R "$shost:$sport:$dhost:$dport" ) ;;
+                    esac
+                done
+
+                # Launch the SSH client which sets up the actual connection.
+                eval "$(keychain --inherit any --quiet --quick --eval)"
+                ssh -n >"${out[t]}" 2> >(tr -d '\r' > "${err[t]}") \
+                    -o "BatchMode yes" \
+                    -o "ExitOnForwardFailure yes" \
+                    -o "ServerAliveCountMax 3" \
+                    -o "ServerAliveInterval 5" \
+                    -p "$port" \
+                    "${arguments[@]}" "$host" 'while sleep 1; do printf .; done' &
+                state[t]=conn pid[t]=$!
+            ;;
+
+            http*)
+                curl -sSnfo - "$url" >"${out[t]}" 2>"${err[t]}" &
+                state[t]=conn pid[t]=$!
+            ;;
+
+            *)
+                unset 'out[t]' 'err[t]'
+            ;;
+        esac
     done
 
     sleep 1

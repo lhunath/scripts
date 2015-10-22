@@ -16,6 +16,8 @@ shopt -s nocasematch
 # This is where you define all your ssh connections.
 # They will be kept up, monitored and restarted as needed.
 config=(
-    "satura.lyndir.com  M       REMOTE:$((61000+hostid))->22"
-    "maven.lyndir.com   M       "
+    "ssh://satura.lyndir.com            M           REMOTE:$((61000+hostid))->22"
+    "ssh://maven.lyndir.com             M           "
+    "ssh://devel@maven.lyndir.com       M           "
+    "http://1.1.1.1/login.html          _           POST:buttonClicked=4"
 )
