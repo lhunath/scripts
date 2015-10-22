@@ -716,7 +716,7 @@ log() {
 
     # Stop the spinner.
     if [[ $type = stopProgress && $_logSpinner ]]; then
-        kill "$_logSpinner"
+        kill "$_logSpinner" 2>/dev/null
         wait "$_logSpinner" 2>/dev/null
         unset _logSpinner
     fi

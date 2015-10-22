@@ -59,7 +59,7 @@ testConn() {
     local pid
 
     trap "printf '$show'" RETURN
-    (( quiet )) || emit -n $'\t'"[${save}   ] $probe$hide"
+    (( quiet )) || inf -n $'\t'"[${save}   ] $probe$hide"
 
     # Launch the probe.
     if (( ! EUID )) && hash nmap 2>/dev/null; then
@@ -94,9 +94,9 @@ testConn() {
     (( quiet )) || {
         printf '\r'                                              >&2
         if (( ! result )); then
-            emit $'\t'"[ ${bold}${green}v${reset} ] $probe"      >&2
+            inf $'\t'"[ ${bold}${green}v${reset} ] $probe"      >&2
         else
-            emit -y $'\t'"[ ${bold}${red}x${reset} ] $probe"     >&2
+            wrn $'\t'"[ ${bold}${red}x${reset} ] $probe"     >&2
         fi
     }
 
@@ -118,7 +118,7 @@ testDNS() {
     local pid
 
     trap 'printf %s "$show"' RETURN
-    (( quiet )) || emit -n $'\t'"[${save}   ] $probe$hide"
+    (( quiet )) || inf -n $'\t'"[${save}   ] $probe$hide"
 
     # Launch the probe.
     host "$probe" >/dev/null 2>&1 & pid=$!
@@ -141,9 +141,9 @@ testDNS() {
     (( quiet )) || {
         printf $'\r'                                                >&2
         if (( ! result )); then
-            emit $'\t'"[ ${bold}${green}v${reset} ] $probe"         >&2
+            inf $'\t'"[ ${bold}${green}v${reset} ] $probe"         >&2
         else
-            emit -y $'\t'"[ ${bold}${red}x${reset} ] $probe"        >&2
+            wrn $'\t'"[ ${bold}${red}x${reset} ] $probe"        >&2
         fi
     }
 
@@ -166,7 +166,7 @@ traceConn() {
     local ms
     local error
 
-    (( quiet )) || emit -n $'\t'"Node: "
+    (( quiet )) || inf -n $'\t'"Node: "
     while printf "${bold}$((node+1))${reset}.."             >&2
             read node ip time ms error; do
         printf "${back}${back}${back}"                      >&2
@@ -174,7 +174,7 @@ traceConn() {
         if [[ $error || $ip = '*' ]]; then
             printf "$reset$red$node.. ${bold}%s$reset.\r"   \
                     "broken"                                >&2
-            emit -ny $'\n'
+            inf -ny $'\n'
             echo "$node $ip $goodIp"
             return $node
         else
@@ -185,7 +185,7 @@ traceConn() {
 
     echo " $green${bold}reachable$reset."                   >&2
     printf '\r'                                             >&2
-    emit -y ''
+    wrn ''
 }
 
 
@@ -233,25 +233,25 @@ while true; do
         networkGatewaySet=1
 
         if (( verbose )); then
-            emit "Default gateway           :  $gateway"
-            emit "Connectivity probes       :  ${probeHostAddrs[*]}"
-            emit "Name resolution probes    :  ${probeHostNames[*]}"
+            inf "Default gateway           :  $gateway"
+            inf "Connectivity probes       :  ${probeHostAddrs[*]}"
+            inf "Name resolution probes    :  ${probeHostNames[*]}"
             echo
         fi
 
-        emit "Checking gateway"
+        inf "Checking gateway"
         if testConn "$gateway"; then
             networkGatewayReachable=1
 
             if ! (( ${#probeHostAddrs[@]} )); then
 
-                emit -r "No testing probes were defined.  Configure this script properly."
+                err "No testing probes were defined.  Configure this script properly."
                 printf "$reset[$bold ${red}? $reset]" >&3
                 exit 2
 
             fi
 
-            emit "Checking connectivity"
+            inf "Checking connectivity"
             networkAllProbesReachable=1
             for probeHostAddr in "${probeHostAddrs[@]}"; do
                 if testConn "$probeHostAddr"; then
@@ -262,7 +262,7 @@ while true; do
             done
             if (( networkSomeProbesReachable )); then
 
-                emit "Checking name resolution"
+                inf "Checking name resolution"
                 if for probeHostName in "${probeHostNames[@]}"; do
                         testDNS "$probeHostName" && break
                     done; then
@@ -281,47 +281,47 @@ while true; do
 
         if (( ! networkGatewaySet )); then
 
-            emit -r "Cause                     :  No default route set."
-            emit -r "Fix                       :  Enable your local network connection or fix / wait for your DHCP."
+            err "Cause                     :  No default route set."
+            err "Fix                       :  Enable your local network connection or fix / wait for your DHCP."
 
         elif (( ! networkGatewayReachable )); then
 
-            emit -r "Cause                     :  Default gateway unreachable."
-            emit -r "Fix                       :  Investigate your line to the gateway or the gateway's local connectivity."
+            err "Cause                     :  Default gateway unreachable."
+            err "Fix                       :  Investigate your line to the gateway or the gateway's local connectivity."
 
         elif (( ! networkSomeProbesReachable )); then
 
-            emit -r "Cause                     :  Network probes unreachable."
-            emit    "Tracing down broken node"
-            emit -n $'\t'"Node: "
+            err "Cause                     :  Network probes unreachable."
+            inf    "Tracing down broken node"
+            inf -n $'\t'"Node: "
 
             read badNode badIp goodIp < <(traceConn "${probeHostAddr[0]}")
             if (( badNode )); then
 
-                emit -r "Cause                     :  Node $badNode (gateway of '$goodIp') is broken."
-                emit -r "Fix                       :  Investigate the line from '$goodIp' to or the connectivity of their gateway toward '${probeHosts[0]}'."
+                err "Cause                     :  Node $badNode (gateway of '$goodIp') is broken."
+                err "Fix                       :  Investigate the line from '$goodIp' to or the connectivity of their gateway toward '${probeHosts[0]}'."
 
             else
                 
                 networkSomeProbesReachable=1
-                emit -y "Cause                     :  Problem disappeared while investigating."
-                emit -y "Fix                       :  Try diagnosing again."
+                wrn "Cause                     :  Problem disappeared while investigating."
+                wrn "Fix                       :  Try diagnosing again."
 
             fi
 
         elif (( ! networkAllProbesReachable )); then
 
-            emit -r "Cause                     :  Some network probes were unreachable."
-            emit -r "Fix                       :  Trace the route to the broken probes to determine which internet router is having issues."
+            err "Cause                     :  Some network probes were unreachable."
+            err "Fix                       :  Trace the route to the broken probes to determine which internet router is having issues."
 
         elif (( ! networkProbesResolvable )); then
 
-            emit -r "Cause                     :  Network probes unresolvable."
-            emit -r "Fix                       :  Investigate your DNS configuration or DNS provider connectivity."
+            err "Cause                     :  Network probes unresolvable."
+            err "Fix                       :  Investigate your DNS configuration or DNS provider connectivity."
 
         else
 
-            emit "No network problems detected."
+            inf "No network problems detected."
 
         fi
 
