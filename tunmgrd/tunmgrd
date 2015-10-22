@@ -160,6 +160,7 @@ while true; do
                     case $side in
                         LOCAL)  arguments+=( -L "$shost:$sport:$dhost:$dport" ) ;;
                         REMOTE) arguments+=( -R "$shost:$sport:$dhost:$dport" ) ;;
+                        DYNAMIC) arguments+=( -D "$shost:$sport" ) ;;
                     esac
                 done
 

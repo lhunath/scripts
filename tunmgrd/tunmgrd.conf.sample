@@ -1,20 +1,33 @@
 #!/syntax/bash
 #   tunmgrd(1) configuration file
 #
-# Move this file to ~/.tunmgrd.conf and edit.
+## Move this file to ~/.tunmgrd.conf and edit.
 
-# You can use bash to initialize variables if you want.
-# In this case, we set a hostid variable to make different computers
-# set up a tunnel on a different port from the same central computer (satura),
-# allowing you to ssh into any of the other computers via the central one.
+## You can use bash to initialize variables if you want.
+## In this case, we set a hostid variable to make different computers
+## set up a tunnel on a different port from the same central computer (satura),
+## allowing you to ssh into any of the other computers via the central one.
 shopt -s nocasematch
 [[ ${HOSTNAME%%.*} = myst ]] && hostid=0
 [[ ${HOSTNAME%%.*} = gillian ]] && hostid=1
 [[ ${HOSTNAME%%.*} = echos ]] && hostid=2
 
+## This is where you define all your ssh connections.
+## They will be kept up, monitored and restarted as needed.
+#
+# Options:
+#   -       Nothing
+#   M       Create a master to speed up other connections.
+#
+# Tunnels:
+#   REMOTE:[shost:]sport->[dhost:]dport
+#           Tunnel remote connections on sport via ssh to dport.
+#   LOCAL:[shost:]sport->[dhost:]dport
+#           Tunnel local connections on sport via ssh to dport.
+#   DYNAMIC:[host:]port
+#           Proxy local SOCKS connections on port via ssh.
+#
 #   Host                Options Tunnels
-# This is where you define all your ssh connections.
-# They will be kept up, monitored and restarted as needed.
 config=(
     "ssh://satura.lyndir.com            M           REMOTE:$((61000+hostid))->22"
     "ssh://maven.lyndir.com             M           "
