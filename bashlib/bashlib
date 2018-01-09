@@ -333,9 +333,9 @@ min() {
 si() {
     local number=$1
 
-    if (( number >= 1000000000000000 )); then printf '%dM' "$((number / 1000000000000000))"
-    elif (( number >= 1000000000000 )); then printf '%dM' "$((number / 1000000000000))"
-    elif (( number >= 1000000000 )); then printf '%dM' "$((number / 1000000000))"
+    if (( number >= 1000000000000000 )); then printf '%dP' "$((number / 1000000000000000))"
+    elif (( number >= 1000000000000 )); then printf '%dT' "$((number / 1000000000000))"
+    elif (( number >= 1000000000 )); then printf '%dG' "$((number / 1000000000))"
     elif (( number >= 1000000 )); then printf '%dM' "$((number / 1000000))"
     elif (( number >= 1000 )); then printf '%dk' "$((number / 1000))"
     else printf '%d' "$number"; fi
