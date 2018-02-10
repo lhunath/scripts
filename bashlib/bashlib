@@ -174,6 +174,9 @@ genToc() {
 # |                                          .:  GLOBAL DECLARATIONS  :. |
 # |______________________________________________________________________|
 
+# Environment
+TMPDIR=${TMPDIR:-/tmp} TMPDIR=${TMPDIR%/}
+
 # Variables for convenience sequences.
 bobber=(     '.' 'o' 'O' 'o' )
 spinner=(    '-' \\  '|' '/' )
@@ -258,7 +261,10 @@ chr() {
 # Outputs the decimal ASCII value of the given character.
 #
 ord() {
-    printf '%d' "'$1"
+    local str=$1 s
+    for (( s=0; s < ${#str}; ++s )); do
+        printf '%d' "'${str:s:1}"
+    done
 } # _____________________________________________________________________
 
 
@@ -271,7 +277,10 @@ ord() {
 # Outputs the hexadecimal ASCII value of the given character.
 #
 hex() { 
-    printf '%x' "'$1"
+    local str=$1 s
+    for (( s=0; s < ${#str}; ++s )); do
+        printf '%02X' "'${str:s:1}"
+    done
 } # _____________________________________________________________________
 
 
@@ -284,7 +293,10 @@ hex() {
 # Outputs the character that has the given hexadecimal ASCII value.
 #
 unhex() {
-    printf "\\x$1"
+    local hex=$1 h
+    for (( h=0; h < ${#hex}; h+=2 )); do
+        printf "\\x${hex:h:2}"
+    done
 } # _____________________________________________________________________
 
 
@@ -609,11 +621,11 @@ csvline() {
 # The closing statement also takes a format and arguments, which are displayed in the spinner.
 #
 log() {
-    local exitcode=$? level=${level:-inf} supported=0 end=$'\n' type=msg conMsg= logMsg= format= colorFormat= date= info= arg= args=() colorArgs=() ruler=
+    local exitcode=$? result=0 level=${level:-inf} supported=0 end=$'\n' type=msg conMsg= logMsg= format= colorFormat= date= info= arg= args=() colorArgs=() ruler=
 
     # Handle options.
     local OPTIND=1
-    while getopts :tpuPrR:d:n arg; do
+    while getopts :tpuPrR:d:nx arg; do
         case $arg in
             p)
                 end='.. '
@@ -631,6 +643,8 @@ log() {
                 end=$OPTARG ;;
             n)
                 end= ;;
+            x)
+                result=$exitcode ;;
         esac
     done
     shift "$((OPTIND-1))"
@@ -657,7 +671,7 @@ log() {
                 log FTL 'Log level %s does not exist' "$level"
                 exit 1 ;;
     esac
-    (( ! supported )) && return "$exitcode"
+    (( ! supported )) && return "$result"
     local logColor=${_logColor:+$logLevelColor}
 
     # Generate the log message.
@@ -685,6 +699,8 @@ log() {
         ;;
 
         stopProgress)
+            kill -0 "$_logSpinner" 2>/dev/null || return
+
             case $exitcode in
                 0)  printf -v logMsg "done${format:+ ($format)}.\n" "${args[@]}"
                     if (( _logColor )); then
@@ -716,9 +732,11 @@ log() {
 
     # Stop the spinner.
     if [[ $type = stopProgress && $_logSpinner ]]; then
-        kill "$_logSpinner" 2>/dev/null
-        wait "$_logSpinner" 2>/dev/null
-        unset _logSpinner
+        {
+            kill "$_logSpinner" ||:
+            wait "$_logSpinner" ||:
+            unset _logSpinner
+        } 2>/dev/null
     fi
 
     # Output the ruler.
@@ -742,9 +760,10 @@ log() {
             while printf >&2 "$eel$blue$bold[$reset%s$reset$blue$bold]$reset\b\b\b" "${spinner[s++ % ${#spinner[@]}]}" && sleep .1
             do :; done
         } & _logSpinner=$!
+        addtrap EXIT 'level=%q _logSpinner=%q golp' "$level" "$_logSpinner"
     fi
 
-    return $exitcode
+    return $result
 }
 trc() { level=TRC log "$@"; }
 dbg() { level=DBG log "$@"; }
@@ -1055,6 +1074,26 @@ bash_ascends()      { bash -c "$_bash_ascends_code" -- "$@"; }
 
 
 #  ______________________________________________________________________
+# |__ AddTrap _____________________________________________________________|
+#
+#       addtrap signal command-format [args...]
+#
+# Add a command to the current commands executed when a signal is received by the bash process.
+#
+# The command-format is a printf-style format for the command to execute.  The optional
+# args are interpolated into the command-format by bash's built-in printf.
+#
+addtrap() {
+    local signal=$1 cmd=$2; shift 2
+    printf -v cmd "$cmd" "$@"
+
+    read _ _ oldtrap <<< "$(trap -p "$signal")"
+    eval "declare oldtrap=${oldtrap% *}"
+    trap "$oldtrap${oldtrap:+; }$cmd" "$signal"
+}
+
+
+#  ______________________________________________________________________
 # |__ Mutex _____________________________________________________________|
 #
 #       mutex file
@@ -1277,18 +1316,17 @@ showHelp() {
 shquote() {
 
     # Initialize the defaults.
-    local arg escape=0 sq="'\\''" dq='\"' quotedArgs=() type=single always=0
+    local OPTIND=1 arg escape=0 sq="'\\''" dq='\"' quotedArgs=() type=single always=0
 
     # Parse the options.
-    while [[ $1 = -* ]]; do
-        case $1 in
-            -e) type=escape  ;;
-            -d) type=double  ;;
-            -a) always=1     ;;
-            --) shift; break ;;
+    while getopts :eda arg; do
+        case $arg in
+            e) type=escape  ;;
+            d) type=double  ;;
+            a) always=1     ;;
         esac
-        shift
     done
+    shift "$((OPTIND-1))"
 
     # Print out each argument, quoting it properly.
     for arg; do
@@ -1394,6 +1432,29 @@ shorten() {
 
 
 #  ______________________________________________________________________
+# |__ CdSource ________________________________________________________________|
+#
+#       cdsource [file]
+#
+# Change the current directory into the directory where the file is located, resolving symlinks.
+#
+cdsource() {
+    local source=${1:-${BASH_SOURCE[1]}}
+
+    while [[ $source ]]; do
+        [[ $source = */* ]] && cd "${source%/*}"
+
+        if [[ -L ${source##*/} ]]; then
+            source=$(readlink "${source##*/}")
+        else
+            source=
+        fi
+    done
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
 # |__ Up ________________________________________________________________|
 #
 #       up .../path|num
@@ -1468,7 +1529,34 @@ inArray() {
 
     # Perform the search.
     for element
-    do [[ $element = $search ]] && return 0; done
+    do [[ "$element" = "$search" ]] && return 0; done
+    return 1
+} # _____________________________________________________________________
+
+
+
+#  ______________________________________________________________________
+# |__ IndexOf ___________________________________________________________|
+#
+#       indexOf element array
+#
+# Outputs the index of the given element in the given array.
+#
+#   element The element to search the array for.
+#   array   This is a list of elements to search through.
+#
+indexOf() {
+
+    # Parse the options.
+    local element index=0
+    local search=$1; shift
+
+    # Perform the search.
+    for element
+    do
+        [[ $element = $search ]] && echo "$index" && return 0
+        let ++index
+    done
     return 1
 } # _____________________________________________________________________
 
