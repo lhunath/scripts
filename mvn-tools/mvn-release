@@ -26,8 +26,28 @@ source mvn-tools || exit
 cd "$root"
 
 
+# Failure report
+checkExit() {
+    r=$?
+    set +e
+    trap - ERR
+
+    (( r )) && {
+        case $step in
+            0)  ftl 'Failed while preparing.  You may resume the process with the command:\n%s' "mvn-release $*" ;;
+            1)  ftl 'Failed while performing.  You may resume the process with the command:\n%s' "mvn-release -p $*" ;;
+            2)  ftl 'Failed while branching.  You may resume the process with the command:\n%s' "mvn-release -b $*" ;;
+        esac
+    }
+
+    rm -rf **/target/checkout
+
+    return $r
+}
+trap checkExit EXIT
+
 # Options.
-prepare=1; perform=1; branch=1
+prepare=1; perform=1; branch=1; step=0
 while getopts :pbh arg; do
     case $arg in 
         p) prepare=0; perform=1; branch=1 ;;
@@ -48,48 +68,61 @@ shift $((OPTIND-1))
 
 # Ask for the to-be-released version number.
 while true; do
-    version=${1:-$(xpathNodes pom.xml '/project/properties/release.version/text()')}
-    version=$(ask "Which version are you releasing? [$version] " || echo "$version")
+    [[ $version ]] || version=$1
+    [[ $version ]] || version=$(git describe --tags --abbrev=0)
+    [[ $version ]] || version=$(xpathNodes '/project/properties/release.version/text()' pom.xml)
+    until version=$(ask -d "$version" "Which version are you releasing?") && [[ $version ]]
+    do true; done
+
     if (( prepare )) && [[ $(git tag -l "$version") ]]; then
-        emit -r "Version '$version' is already tagged."
+        err 'Version %s is already tagged.' "$version"
     else
         break
     fi
 done
-if [[ $(git symbolic-ref -q HEAD) = *-maint || $version = *-p* ]]; then
-    ask -y!N "Create a maintenance branch?" && maintBranch=1
-else
-    ask -Y!n "Create a maintenance branch?" && maintBranch=1
-fi
+ask -c 'y!N' "Create a maintenance branch?" && maintBranch=1
 
 # Prepare the release by updating versions and tagging in SCM.
 if (( prepare )); then
-    emit "Updating Maven and GIT for the release of $version"
+    if [[ -e pom.xml.releaseBackup ]]; then
+        ask -c 'Y!n' "A release preparation is already in progress.  Resume it?"  || cleanRelease=release:clean
+    fi
+
+    inf 'Updating Maven and GIT for the release of %s' "$version"
     if (( releasePom )); then
-        mvn --batch-mode release:clean release:prepare-with-pom -Dtag="$version" -DreleaseVersion="$version" ||:
+        mvn -Prelease --batch-mode $cleanRelease release:prepare-with-pom -DpushChanges=false -Dtag="$version" -DreleaseVersion="$version" ||:
         # Workaround for <http://jira.codehaus.org/browse/MRELEASE-539> -- Let normal release:prepare finish it off.
         git commit -vF <(echo '[maven-release-plugin] [workaround] release cleanup')
-        mvn release:prepare
+        mvn -Prelease release:prepare -DpushChanges=false
     else
-        mvn --batch-mode release:clean release:prepare -Dtag="$version" -DreleaseVersion="$version"
+        mvn -Prelease --batch-mode $cleanRelease release:prepare -DpushChanges=false -Dtag="$version" -DreleaseVersion="$version"
     fi
 fi
+step=1
 
 # Perform the release by deploying the changes.
 if (( perform )); then
-    emit "Deploying the code for the release of $version"
+    if (( prepare )); then
+        if ask -c 'y!N' "Release $version has been prepared.  Interrupt deployment for testing?"; then
+            exit 1
+        fi
+    fi
+
+    inf 'Deploying the code for the release of %s' "$version"
     if (( releasePom )); then
         # Workaround for <http://jira.codehaus.org/browse/MRELEASE-542> -- Force use of release-pom.xml
-        mvn release:perform -D"arguments=-f release-pom.xml"
+        mvn -Prelease release:perform -DpushChanges=true -D"arguments=-Prelease -f release-pom.xml"
     else
-        mvn release:perform
+        mvn -Prelease release:perform -DpushChanges=true -D"arguments=-Prelease" -Dtag="$version"
     fi
+    git push && git push --tags
 fi
+step=2
 
 # Create the release's maintenance branch.
 if (( branch && maintBranch )); then
     # Remember where we came from so we can come back.
-    emit "Making a maintenance branch for the release of $version"
+    inf 'Making a maintenance branch for the release of %s' "$version"
     if ! before=$(git symbolic-ref -q HEAD); then
         before="_before-rel"
         git tag "$before"
@@ -99,7 +132,7 @@ if (( branch && maintBranch )); then
     # Create a fake branch because release:branch fails when not on a branch.
     git checkout -b "_$version-rel" "$version"
 
-    mvn --batch-mode release:branch -DreleaseVersion=SNAPSHOT
+    mvn -Prelease --batch-mode release:branch -DreleaseVersion=GIT-SNAPSHOT
 
     # Go back to where we came from.
     git checkout "${before##refs/heads/}"
@@ -108,4 +141,4 @@ if (( branch && maintBranch )); then
     git branch -D "_$version-rel"
 fi
 
-emit "All done."
+inf 'All done.'

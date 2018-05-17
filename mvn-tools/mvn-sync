@@ -26,8 +26,11 @@ source mvn-tools || exit
 cd "$root"
 
 # Validate configuration.
-[[ ! $remote || ! $remoteRepo ]] && { emit -y "Remote and/or remote repo not set."; exit 1; }
+[[ ! $syncTo || ! $syncToPath ]] && { emit -y "Remote host and/or remote repo for sync not set."; exit 1; }
+
+update=1
+[[ $1 = -U ]] && { update=; shift; }
 
 # Sync.
 find . \( -type d ! -execdir test -e pom.xml \; -prune \) -o \( -name src -o -name pom.xml \) -print0 | \
-    rsync -avPr --delete-delay -0 --files-from=- . "$remote:$remoteRepo"
+    rsync -avPr ${update:+-u} --delete-after -0 --files-from=- -e "ssh ${syncToPort:+-p $syncToPort}" "$@" . "$syncToHost:${syncToPath:-~}"

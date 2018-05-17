@@ -26,17 +26,20 @@ source mvn-tools || exit
 # TODO: Support for deleted file detection:
 #       When a file is deleted from a source tree, the artifact should be
 #       added to the reactor and first cleaned.
+#       Support for pom artifacts:
+#       POM artifacts have no target/ directory to compare mtimes against.
 
 
 # Functions.
 # loadModules -- invoke whenever the modules array is needed.
 loadModules() {
     (( ${#modules[@]} )) && return
+    local profiles
 
     # Build list of all modules allowed in the maven reactor.
-    IFS=$'\n' read -d '' -r -a profiles < <(xpathNodes ~/.m2/settings.xml '/settings/activeProfiles/activeProfile/text()') ||:
+    IFS=$'\n' read -d '' -r -a profiles < <(xmlstarlet sel -t -v '/_:settings/_:activeProfiles/_:activeProfile/text()' ~/.m2/settings.xml 2>/dev/null) ||:
     emit "Enumerating modules in the Maven reactor" --
-        modules=()
+        modules=(.)
         addModules() {
             grep -qF '<module>' "$1" || return 0
 
@@ -52,23 +55,26 @@ loadModules() {
 
             done < <(
                 # Sub modules from the module's pom.xml's module list.
-                xpathNodes "$1" '/project/modules/module/text()'
+                xmlstarlet sel -t -v '/_:project/_:modules/_:module/text()' "$1" 2>/dev/null ||:
 
                 # Profile-enabled sub modules from the module's pom.xml's profiles module lists.
                 grep -qF '<profile>' "$1" && {
                     for profile in "${profiles[@]}"; do
-                        xpathNodes "$1" "/project/profiles/profile/id[text()='$profile']/../modules/module/text()"
+                        xmlstarlet sel -t -v "/_:project/_:profiles/_:profile/_:id[text()='$profile']/../_:modules/_:module/text()" "$1" 2>/dev/null ||:
                     done
                 }
             )
         }
         addModules ./pom.xml
     emit -$?
+
+    #printf ' - module: %s\n' "${modules[@]}" >&2
+    (( ${#modules[@]} ))
 }
 
 
 # Options.
-while getopts :aABcCdDfnr:h arg; do
+while getopts :aABcCdDfn:h arg; do
     case $arg in 
         a) autoFindArtifacts=1  ;;
         A) resetArtifacts=1     ;;
@@ -79,7 +85,6 @@ while getopts :aABcCdDfnr:h arg; do
         D) nodistribution=1     ;;
         f) force=1              ;;
         n) nodeploy=1           ;;
-        r) remote=$OPTARG       ;;
 
 		h) showHelp \
 			'Build and Deploy' \
@@ -96,8 +101,8 @@ while getopts :aABcCdDfnr:h arg; do
             '-C'                "Clean each artifact before building it (eg. when files were renamed/removed or to rebuild /lib)." \
 			'-d distribution'   "The name in the reactor of the distribution artifact. (Default: [top dir name]-distribution)" \
             '-D'                "Do not try to build and deploy a distribution." \
+            '-f'                "Force default operations, no questions asked." \
             '-n'                "Do not try to deploy the distribution after building it."
-			'-r user@host'      "Upload and deploy the distribution to user@host." \
 
 			exit		;;
     esac
@@ -105,7 +110,6 @@ done
 shift $((OPTIND-1))
 
 # Validate parameters.
-[[ $remote ]] || emit -y "Missing remote"
 distribution=${distribution:-${PWD##*/}-distribution}
 [[ -e $distribution ]] || distribution=
 (( nodistribution )) && distribution=
@@ -120,13 +124,13 @@ fi
 while (( ! nobuild )); do
 
     if (( autoFindArtifacts )); then
-        loadModules
+        loadModules || emit -r "No modules found."
 
         # Automatically find outdated artifacts.
         emit "Scanning for outdated artifacts"
         while read file; do
             files=("$file")
-            [[ $file = ./pom.xml ]] && files=(*/pom.xml)
+            #[[ $file = ./pom.xml ]] && files=(*/pom.xml)
 
             for file in "${files[@]}"; do
                 target=$file
@@ -136,32 +140,43 @@ while (( ! nobuild )); do
                 target=${target#./}
 
                 # Only consider this target if it's in the module list.
-                inArray "$target" "${modules[@]}" || continue
+                inArray "$target" "${modules[@]}" || {
+                    #echo "Ignoring: $target, not a module." >&2
+                    continue
+                }
 
                 emit "Adding (Outdated)  : $bold$target$reset:$file"
                 targets+=("$PWD/$target")
             done
-        done < <(find . \
+        done < <(export -f latest
+                 find . \
                     \( -type d ! \( -exec bash -c 'test -e "$1/pom.xml"' -- {} \; -o -name 'src' -o -path '*/src/*' \) -prune \) -o \
                     -name 'pom.xml' -exec bash -c '
                         shopt -s nullglob
-                        ref=( "${1%/pom.xml}"/target/*.{[jwe]ar,zip} )
+                        ref=$(latest "${1%/pom.xml}"/target/*.{[jwe]ar,zip})
+                        #printf "Candidate: %s <> %s" "$1" "$ref" >&2
                         if [[ -e $ref && $1 -nt $ref ]]; then
+                            #echo ", outdated." >&2
                             echo "$1"
+                        else
+                            : #echo ", up-to-date." >&2
                         fi
                         :' -- {} \; -o \
                     ! -type d -path '*/src/main/*' -exec bash -c '
                         shopt -s nullglob
                         for f; do
                             [[ ${f%%/src/main/*} != ${ref%/target/*} ]] && \
-                                ref=( "${f%%/src/main/*}"/target/*[.]{[jwe]ar,zip} )
+                                ref=$(latest "${f%%/src/main/*}"/target/*[.]{[jwe]ar,zip})
                             if [[ ! -e $ref ]]; then
-                                continue
-                                #while [[ $f = */* && ! -e $f/pom.xml ]]
-                                #do f=${f%/*}; done
-                                #echo "$f"
+                                #continue
+                                while [[ $f = */* && ! -e $f/pom.xml ]]
+                                do f=${f%/*}; done
+                                echo "$f"
                             elif [[ $f -nt $ref ]]; then
                                 echo "$f"
+                                #echo "outdated: $f" >&2
+                            else
+                                : #echo "uptodate: $f, $ref" >&2
                             fi
                         done
                         :' -- {} + | sort -u)
@@ -169,6 +184,9 @@ while (( ! nobuild )); do
 
     # Add manually specified targets.
     opts=()
+    for profile in "${profiles[@]}"; do
+        opts+=("-P$profile")
+    done
     for target; do
         [[ $target = -* ]] && { opts+=("$target"); continue; }
 
@@ -177,9 +195,10 @@ while (( ! nobuild )); do
     done
     cd "$root"
 
-    (( ! ${#targets[@]} && ! force )) && {
-        if ! ask -y!N 'No artifacts selected for build; build anyway?'; then
-            if (( nodeploy || nodistribution )) || ! ask -Y!n 'Continue deployment with existing build?'; then
+    (( ! ${#targets[@]} )) && {
+        if (( force )) || ! ask -c 'y!N' 'No artifacts selected for build; build anyway?'; then
+            if (( nodeploy || nodistribution || force )) || ! ask -c 'y!N' 'Continue deployment with existing build?'; then
+                emit "No artifacts selected for build.  Nothing to build or deploy."
                 exit
             fi
 
@@ -209,10 +228,15 @@ while (( ! nobuild )); do
     # Begin the build.
     if (( ${#targets[@]} )); then
         echo
-        emit "Building"
-        mvn -pl "$(printf '%s,' "${targets[@]}")" -npu -amd "${opts[@]}" ${cleanAll:+clean} install & mvnpid=$!
+        if inArray . "${targets[@]}"; then
+            emit "Building with: mvn -npu "${opts[@]}" ${cleanAll:+clean} install"
+            mvn -npu "${opts[@]}" ${cleanAll:+clean} install & mvnpid=$!
+        else
+            emit "Building with: mvn -pl "$(printf '%s,' "${targets[@]}")" -npu -amd "${opts[@]}" ${cleanAll:+clean} install"
+            mvn -pl "$(printf '%s,' "${targets[@]}")" -npu -amd "${opts[@]}" ${cleanAll:+clean} install & mvnpid=$!
+        fi
         (( clean && ! nodistribution )) && [[ -e $distribution ]] && ( sleep 10; kill -0 $mvnpid 2>/dev/null && rm -rf "$distribution/target/" ) & cleanpid=$!
-        trap "kill $mvnpid $cleanpid 2>/dev/null" EXIT
+        trap "kill $mvnpid $cleanpid 2>/dev/null ||:" EXIT
         wait $mvnpid
     fi
 
@@ -220,24 +244,40 @@ while (( ! nobuild )); do
 done
 
 if [[ -e $distribution ]] && (( ! nodeploy && ! nodistribution )); then
-
-    # Upload the distribution.
     echo
-    emit "Shutting down remote distribution"
-    ssh -qt "$remote" "$(printf 's=%q/scripts/stop; [[ -e $s ]] || exit 0; "$s"' "${src%%/*}")"
 
-    emit "Unpacking distribution"
+    # Find the package
     cd "$distribution/target/"
-    unzip -uo "${distribution##*/}"-*.zip
-    src=("${distribution##*/}"-*/*/); src=("${src[@]%/}")
+    shopt -s nullglob
+    package=(*.{[jwe]ar,zip})
+    shopt -u nullglob
 
-    emit "Uploading distribution to $remote"
-    ssh -qt "$remote" "$(printf 's=%q/scripts/stop; [[ -e $s ]] || exit 0; "$s" -w' "${src%%/*}")"
-    rsync -avP --delete-delay "${src[@]}" "$remote":"${src%%/*}/"
+    # Handle the package
+    case $package in
+        *.zip)
+            emit "Unpacking distribution"
+            unzip -uo "$package"
+            src=("${distribution##*/}"-*/*/); src=("${src[@]%/}")
 
-    emit "(Re)Starting remote distribution"
-    ssh -qt "$remote" "$(printf 'dist=%q
-                                 "$dist/scripts/start" -f' "${src%%/*}")"
+            emit "Shutting down remote distribution"
+            ssh -qt ${deployToPort:+-p "$deployToPort"} "$deployToHost" "$(printf 'bash -lc %q' "$(printf 's=%q/scripts/stop; [[ -e $s ]] || exit 0; "$s"' "${deployToPath:-~}/${src%%/*}")")"
+
+            emit "Uploading distribution to $deployTo:${deployToPath:-~}/${src%%/*}"
+            ssh -qt ${deployToPort:+-p "$deployToPort"} "$deployToHost" "$(printf 'bash -lc %q' "$(printf 's=%q/scripts/stop; [[ -e $s ]] || exit 0; "$s" -w' "${deployToPath:-~}/${src%%/*}")")"
+            rsync -avP --delete-after -e "ssh ${deployToPort:+-p $deployToPort}" "${src[@]}" "$deployToHost":"${deployToPath:-~}/${src%%/*}/"
+
+            emit "(Re)Starting remote distribution"
+            ssh -qt ${deployToPort:+-p "$deployToPort"} "$deployToHost" "$(printf 'bash -lc %q' "$(printf 'dist=%q; "$dist/scripts/start" -f' "${deployToPath:-~}/${src%%/*}")")"
+            ;;
+        *.ear|*.war)
+            emit "Uploading package to $deployTo:${deployToPath:-~}/$package"
+            rsync -avP --delete-after -e "ssh ${deployToPort:+-p $deployToPort}" "$package" "$deployToHost":"${deployToPath:-~}"
+            ;;
+
+        *)
+            emit -R "Don't know how to handle package: $package"
+            ;;
+    esac
 fi
 
 # Print timestamp.

@@ -22,15 +22,20 @@
 #   * http://lhunath.lyndir.com                                               #
 #   * Maarten Billemont.                                                      #
 #                                                                             #
-source "${BASH_SOURCE%/*}/bashlib"                                            #
 set -e
 trap 'echo "$BASH_SOURCE:$BASH_LINENO: ${FUNCNAME:+$FUNCNAME:}$BASH_COMMAND failed with exit code: $?"' ERR
+[[ $0 = */* && -e ${0%/*}/bashlib ]] && source "${0%/*}/bashlib" || source bashlib
 
+tools=( bashlib mvn-auto mvn-install mvn-meta mvn-release mvn-sync mvn-tools )
 # Install all files necessary for mvn-tools.
 installTools() {
     local from=$1 to=$2
 
-    for file in "$from/"{bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
+    for file in "${tools[@]/#/$from/}"; do
+        if [[ $to/${file##*/} -nt $file ]]; then
+            cmp "$to/${file##*/}" "$file" || emit -y "$to/${file##*/} is newer than but different from $file, won't overwrite.  Please manually check which version to keep."
+            continue
+        fi
         cp "$file" "$to/"
         touch -r "$file" "$to/${file##*/}"
     done
@@ -40,14 +45,15 @@ updateCheck() {
     local from=$1 outdated=
     [[ -d $from ]] || return 0
 
-    for tool in {bashlib,mvn-auto,mvn-install,mvn-meta,mvn-release,mvn-sync,mvn-tools}; do
+    for tool in "${tools[@]}"; do
+        cmp -s "$(type -P "$tool")" "$from/$tool" && continue
         [[ "$(type -P "$tool")" -ot "$from/$tool" ]] && { outdated=installed; break; }
         [[ "$(type -P "$tool")" -nt "$from/$tool" ]] && { outdated=source; break; }
     done
 
     case $outdated in
         installed)
-            if ask -Y!n "An update is available for mvn-tools.  Update now?"; then
+            if ask -c 'Y!n' "An update is available for mvn-tools.  Update now?"; then
                 destination=$(type -P mvn-tools); destination=${destination%/*}
                 installTools "$from" "$destination"
 
@@ -55,7 +61,7 @@ updateCheck() {
                 exit
             fi      ;;
         source)
-            if ask -Y!n "Your installed mvn-tools is more recent than that of the repository.  Update repository?"; then
+            if ask -c 'Y!n' "Your installed mvn-tools is more recent than that of the repository.  Update repository?"; then
                 source=$(type -P mvn-tools); source=${source%/*}
                 installTools "$source" "$from"
 
@@ -76,7 +82,7 @@ updateCheck() {
     else
         # Check if we know the source location.
         if [[ $0 = */mvn-tools ]]; then
-            if ask -Y!n "mvn-tools is not installed.  Do you want to install it?"; then
+            if ask -c 'Y!n' "mvn-tools is not installed.  Do you want to install it?"; then
                 emit -n "Your PATH is: $PATH"$'\n'
                 IFS=: read -r -a paths <<< "$PATH"
                 anyAccess=0
@@ -103,7 +109,7 @@ updateCheck() {
                 # Try to guess the root of a repository to prepare for mvn-tools usage.
                 root=$(cd "${0%/*}/../"; echo "$PWD")
                 if [[ ! -e $root/.mvn-tools ]]; then
-                    if ask -Y!n "Is '$root' the root of a repository you want to use with mvn-tools?"; then
+                    if ask -c 'Y!n' "Is '$root' the root of a repository you want to use with mvn-tools?"; then
                         install -m 0640 "${0%/*}/.mvn-tools.sample" "$root/.mvn-tools"
                     fi
                 fi
@@ -125,10 +131,24 @@ updateCheck "$root/scripts"
 
 # Defaults
 distribution=
-remote=
-remoteRepo=
+deployTo=
+deployToHost=
+deployToPort=
+deployToPath=
+syncTo=
+syncToHost=
+syncToPort=
+syncToPath=
 releasePom=0
 
 # Read user configuration
 [[ -e $HOME/.mvn-tools ]] && source "$HOME/.mvn-tools"
 [[ -e $root/.mvn-tools ]] && source "$root/.mvn-tools"
+
+# Parse configuration
+[[ $deployTo = *:* ]] && deployToPort=${deployTo##*:}
+deployToHost=${deployTo%:*}
+deployTo=$deployToHost${deployToPort:+:$deployToPort}
+[[ $syncTo = *:* ]] && syncToPort=${syncTo##*:}
+syncToHost=${syncTo%:*}
+syncTo=$syncToHost${syncToPort:+:$syncToPort}

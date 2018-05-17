@@ -19,7 +19,7 @@
 #                                                                             #
 #                                                                             #
 # Copyright 2010, lhunath                                                     #
-#   * http://lhunath.lyndir.com                                               #
+#   * http://www.lhunath.com                                                  #
 #   * Maarten Billemont.                                                      #
 #                                                                             #
 source bashlib
@@ -31,7 +31,7 @@ while getopts :fdu:h opt; do
         f) force=1
             ;;
         d) deploy=1
-           url=${url:-scpexe://maven.lyndir.com/usr/local/scm/maven2}
+           url=$(ask -d "${url:-scpexe://devel-maven.lyndir.com/usr/local/scm/maven2}" "Deploy to:")
             ;;
         u) url=$OPTARG
             ;;
@@ -51,20 +51,34 @@ while getopts :fdu:h opt; do
 done
 shift $((OPTIND-1))
 
+# Functions.
+parsePom() {
+    name=$(xpath "$pomFile" '/project/artifactId/text()' 2>/dev/null | grep . || echo "$name")
+    group=$(xpath "$pomFile" '/project/groupId/text()' 2>/dev/null | grep . || echo "$group")
+    version=$(xpath "$pomFile" '/project/version/text()' 2>/dev/null | grep . || echo "$version")
+    type=$(xpath "$pomFile" '/project/type/text()' 2>/dev/null | grep . || echo "$type") type=${type:-jar}
+}
+
 # Defaults.
 url=${url:-file://$HOME/.m2/repository/}
 
 (( ! $# )) && {
-    emit -R "Please specify the archives to process as arguments to this script."
-    exit 1
+    if [[ -e pom.xml ]]; then
+        pomFile=pom.xml
+        parsePom
+        set -- ~/.m2/repository/"${group//.//}/${name}/${version}/${name}-${version}.${type}"
+    else
+        ftl "Please specify the archives to process as arguments to this script."
+        exit 1
+    fi
 }
 for archive; do
     [[ $archive != *.?ar ]] && {
-        emit -R "The file '$archive' is not a valid Java Archive file."
-        ask -y!N "Are you sure you want to submit this to the maven repository?" || exit 1
+        wrn 'The file %s is not a valid Java Archive file.' "$archive"
+        ask -c 'y!N' "Are you sure you want to submit this to the maven repository?" || exit 1
     }
     [[ ! -e $archive ]] && {
-        emit -R "The archive '$archive' does not exist."
+        ftl 'The archive %s does not exist.' "$archive"
         exit 1
     }
 done
@@ -75,7 +89,7 @@ for file; do
     # Guess a few parameters from the filename.     # a/b/foo-bar-2.0-sources.jar
 
     archive=${file##*/}                             # foo-bar-2.0-sources.jar
-    emit "For: $archive"
+    inf 'For: %s' "$archive"
 
     type=${archive##*.}                             # jar
 
@@ -99,42 +113,42 @@ for file; do
     pomFile=${file%.*}                              # a/b/foo-bar-2.0-sources
     pomFile=${pomFile%-$classifier}.pom             # a/b/foo-bar-2.0.pom
     if [[ -f $pomFile ]]; then
-        emit "Using: $pomFile"
+        inf 'Using: %s' "$pomFile"
         generatePom=
-        name=$(xpath "$pomFile" '/project/artifactId/text()' 2>/dev/null | grep . || echo "$name")
-        group=$(xpath "$pomFile" '/project/groupId/text()' 2>/dev/null | grep . || echo "$group")
-        version=$(xpath "$pomFile" '/project/version/text()' 2>/dev/null | grep . || echo "$version")
-        type=$(xpath "$pomFile" '/project/type/text()' 2>/dev/null | grep . || echo "$type")
+        parsePom
     else
         pomFile=
         generatePom=true
     fi
 
     # Ask the user to fill in/confirm the necessary parameters.
-    if [[ ! $group ]] || (( ! force )); then group=$(ask +"$group" 'Group:'); fi
-    if [[ ! $name ]] || (( ! force )); then name=$(ask +"$name" 'Name:'); fi
-    if [[ ! $version ]] || (( ! force )); then version=$(ask +"$version" 'Version:'); fi
-    if [[ ! $type ]] || (( ! force )); then type=$(ask +"$type" 'Package Type:'); fi
-    if [[ ! $classifier ]] || (( ! force )); then classifier=$(ask +"$classifier" 'Classifier (sources/javadoc/none):'); fi
+    if [[ ! $group ]] || (( ! force )); then group=$(ask -d "$group" 'Group:'); fi
+    if [[ ! $name ]] || (( ! force )); then name=$(ask -d "$name" 'Name:'); fi
+    if [[ ! $version ]] || (( ! force )); then version=$(ask -d "$version" 'Version:'); fi
+    if [[ ! $type ]] || (( ! force )); then type=$(ask -d "$type" 'Package Type:'); fi
+    if [[ ! $classifier ]] || (( ! force )); then classifier=$(ask -d "$classifier" 'Classifier (sources/javadoc/none):'); fi
     [[ $classifier = none ]] && classifier=
 
+    [[ $file = ~/.m2/repository/* ]] && { cp "$file" /tmp && file=/tmp/${file##*/}; }
+    [[ $pomFile = ~/.m2/repository/* ]] && { cp "$pomFile" /tmp && pomFile=/tmp/${pomFile##*/}; }
+
     mvn deploy:deploy-file \
-      -Durl="$url" \
-      -Dfile="$file" \
-      -DgroupId="$group" \
-      -DartifactId="$name" \
-      -Dversion="$version" \
-      -Dpackaging="$type" \
-      -Dclassifier="$classifier" \
-      ${generatePom:+-DgeneratePom="$generatePom"} \
-      ${pomFile:+-DpomFile="$pomFile"}
+        -Durl="$url" \
+        -Dfile="$file" \
+        -DgroupId="$group" \
+        -DartifactId="$name" \
+        -Dversion="$version" \
+        -Dpackaging="$type" \
+        -Dclassifier="$classifier" \
+        ${generatePom:+-DgeneratePom="$generatePom"} \
+        ${pomFile:+-DpomFile="$pomFile"} || continue
 
     echo "<dependency>"
     echo "    <groupId>$bold$group$reset</groupId>"
     echo "    <artifactId>$bold$name$reset</artifactId>"
     echo "    <version>$bold$version$reset</version>"
     [[ $type != jar ]] && {
-        echo "    <packaging>$bold$type$reset</packaging>"
+        echo "    <type>$bold$type$reset</type>"
     }
     [[ $classifier ]] && {
         echo "    <classifier>$bold$classifier$reset</classifier>"
