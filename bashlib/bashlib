@@ -277,9 +277,8 @@ ord() {
 # Outputs the hexadecimal ASCII value of the given character.
 #
 hex() { 
-    local str=$1 s
-    for (( s=0; s < ${#str}; ++s )); do
-        printf '%02X' "'${str:s:1}"
+    { (( $# )) && printf %s "$*" || cat; } | while IFS= read -N1; do
+        printf '%02X ' "'${REPLY}"
     done
 } # _____________________________________________________________________
 
